@@ -63,6 +63,7 @@ type GoogleMapsApi = {
       disableDefaultUI?: boolean;
       zoomControl?: boolean;
       styles?: Array<Record<string, unknown>>;
+      mapId?: string;
     }
   ) => GoogleMapInstance;
   Marker: new (options: {
