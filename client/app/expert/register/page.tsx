@@ -4,11 +4,10 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
 import { 
   User, Phone, Mail, Lock, ShieldCheck, MapPin, 
   Briefcase, Clock, DollarSign, CheckCircle2, 
-  ChevronRight, ChevronLeft, Mic, Camera,
+  ChevronRight, ChevronLeft,
   Zap, Wrench, GraduationCap, Home, Paintbrush, Hammer, Car
 } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
@@ -16,6 +15,17 @@ import { VoiceButton } from "@/components/expert/VoiceButton";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { MapPicker } from "@/components/expert/MapPicker";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { ImageUploadField } from "@/components/expert/ImageUploadField";
+import { registerExpert } from "@/services/expertAuth";
+import { isFirebaseConfigured } from "@/lib/firebase";
+import {
+  registrationSchema,
+  stepFields,
+  type RegistrationFormData,
+} from "@/lib/validation/expertRegistration";
+import type { ExpertLocation } from "@/types/expert";
+import { Loader2 } from "lucide-react";
 
 // --- Types & Constants ---
 
@@ -29,21 +39,6 @@ const categories = [
   { id: "carpenter", icon: Hammer, label: "reg.cat.carpenter", color: "bg-amber-700" },
   { id: "mechanic", icon: Car, label: "reg.cat.mechanic", color: "bg-red-500" },
 ];
-
-const registrationSchema = z.object({
-  fullName: z.string().min(3, "Name too short"),
-  email: z.string().email("Invalid email"),
-  phone: z.string().min(10, "Invalid phone"),
-  password: z.string().min(6, "Password too short"),
-  category: z.string().min(1, "Select a category"),
-  address: z.string().min(5, "Address too short"),
-  city: z.string().min(2, "City too short"),
-  experience: z.string(),
-  rate: z.string(),
-  hours: z.string(),
-});
-
-type RegistrationData = z.infer<typeof registrationSchema>;
 
 // --- Components ---
 
@@ -66,22 +61,91 @@ export default function RegisterPage() {
   const router = useRouter();
   const stepsCount = 6;
 
-  const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<RegistrationData>({
+  const [profileImage, setProfileImage] = useState<File | null>(null);
+  const [idCardImage, setIdCardImage] = useState<File | null>(null);
+  const [profileImageError, setProfileImageError] = useState<string | null>(null);
+  const [locationCoords, setLocationCoords] = useState<ExpertLocation>({
+    address: "",
+    city: "lahore",
+    lat: 31.5204, // Default to Lahore latitude
+    lng: 74.3587, // Default to Lahore longitude
+  });
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    trigger,
+    formState: { errors },
+  } = useForm<RegistrationFormData>({
     resolver: zodResolver(registrationSchema),
     defaultValues: {
       category: "",
-    }
+      city: "lahore",
+      skills: "",
+      hours: "Full Time",
+    },
   });
 
   const selectedCategory = watch("category");
 
-  const onSubmit = (data: RegistrationData) => {
-    console.log("Final Submission:", data);
-    // Here we would call Firebase
-    router.push("/expert/dashboard");
+  const onSubmit = async (data: RegistrationFormData) => {
+    if (!isFirebaseConfigured()) {
+      setSubmitError("Firebase is not configured. Add keys to client/.env.local");
+      return;
+    }
+
+    if (!profileImage) {
+      setProfileImageError("Profile photo is required");
+      setStep(5);
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+    setProfileImageError(null);
+
+    try {
+      await registerExpert({
+        fullName: data.fullName,
+        email: data.email,
+        password: data.password,
+        phone: data.phone,
+        category: data.category,
+        skills: data.skills,
+        location: {
+          address: data.address,
+          city: data.city,
+          lat: locationCoords.lat ?? 31.5204,
+          lng: locationCoords.lng ?? 74.3587,
+        },
+        profileImageFile: profileImage,
+        idCardImageFile: idCardImage,
+        experience: data.experience,
+        rate: data.rate,
+        hours: data.hours,
+      });
+
+      router.push("/expert/dashboard");
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Registration failed");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const nextStep = () => {
+  const nextStep = async () => {
+    const fields = stepFields[step];
+    const valid = fields.length === 0 || (await trigger(fields));
+    if (!valid) return;
+
+    if (step === 2 && !watch("address")?.trim()) {
+      return;
+    }
+
     if (step < stepsCount - 1) setStep(step + 1);
   };
 
@@ -110,6 +174,19 @@ export default function RegisterPage() {
         </div>
 
         <ProgressBar currentStep={step} totalSteps={stepsCount} />
+
+        {!isFirebaseConfigured() && (
+          <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm">
+            Firebase is not configured. Copy <code className="text-orange-400">.env.local.example</code> to{" "}
+            <code className="text-orange-400">.env.local</code> and restart the dev server.
+          </div>
+        )}
+
+        {submitError && (
+          <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm">
+            {submitError}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
           <AnimatePresence mode="wait">
@@ -147,6 +224,18 @@ export default function RegisterPage() {
                     {errors.fullName && <p className="text-red-500 text-xs mt-1">{errors.fullName.message}</p>}
                   </div>
 
+                  <ImageUploadField
+                    label={t("reg.profilePic")}
+                    hint="JPG or PNG, max 5MB"
+                    required
+                    value={profileImage}
+                    onChange={(file) => {
+                      setProfileImage(file);
+                      setProfileImageError(null);
+                    }}
+                    error={profileImageError ?? undefined}
+                  />
+
                   <div className="relative">
                     <label className="block text-sm font-medium text-gray-400 mb-2">{t("auth.email")} / ای میل</label>
                     <div className="flex gap-2">
@@ -160,6 +249,7 @@ export default function RegisterPage() {
                       </div>
                       <VoiceButton onTranscript={(text) => setValue("email", text.replace(/\s/g, "").toLowerCase())} />
                     </div>
+                    {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>}
                   </div>
 
                   <div className="relative">
@@ -175,6 +265,7 @@ export default function RegisterPage() {
                       </div>
                       <VoiceButton onTranscript={(text) => setValue("phone", text.replace(/\D/g, ""))} />
                     </div>
+                    {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone.message}</p>}
                   </div>
 
                   <div className="relative">
@@ -188,6 +279,8 @@ export default function RegisterPage() {
                       />
                       <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
                     </div>
+                    <p className="text-xs text-gray-500 mt-1">Min 8 characters, include letters and numbers</p>
+                    {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>}
                   </div>
                 </div>
               </motion.div>
@@ -231,6 +324,7 @@ export default function RegisterPage() {
                     </button>
                   ))}
                 </div>
+                {errors.category && <p className="text-red-500 text-xs text-center">{errors.category.message}</p>}
               </motion.div>
             )}
 
@@ -288,11 +382,17 @@ export default function RegisterPage() {
                   </div>
 
                   <div className="h-80 relative">
-                    <MapPicker 
+                    <MapPicker
                       onLocationSelect={(loc) => {
                         setValue("address", loc.address);
-                        // We could also save lat/lng
-                      }} 
+                        setLocationCoords((prev) => ({
+                          ...prev,
+                          address: loc.address,
+                          lat: loc.lat,
+                          lng: loc.lng,
+                          city: watch("city") || prev.city,
+                        }));
+                      }}
                     />
                   </div>
                 </div>
@@ -355,12 +455,13 @@ export default function RegisterPage() {
                     <label className="block text-sm font-medium text-gray-400 mb-2">{t("reg.skills")}</label>
                     <div className="flex gap-2">
                       <textarea
-                        {...register("experience")}
+                        {...register("skills")}
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 outline-none min-h-[100px]"
                         placeholder="List your specific skills..."
                       />
-                      <VoiceButton onTranscript={(text) => setValue("experience", text)} />
+                      <VoiceButton onTranscript={(text) => setValue("skills", text)} />
                     </div>
+                    {errors.skills && <p className="text-red-500 text-xs mt-1">{errors.skills.message}</p>}
                   </div>
                 </div>
               </motion.div>
@@ -384,12 +485,28 @@ export default function RegisterPage() {
                   <div>
                     <label className="block text-sm font-medium text-gray-400 mb-2">{t("reg.hours")}</label>
                     <div className="grid grid-cols-2 gap-4">
-                      <button type="button" className="p-4 bg-orange-500/20 border border-orange-500 rounded-2xl flex flex-col items-center">
-                        <Clock className="w-6 h-6 mb-2 text-orange-500" />
+                      <button
+                        type="button"
+                        onClick={() => setValue("hours", "Full Time")}
+                        className={`p-4 rounded-2xl flex flex-col items-center border transition-all ${
+                          watch("hours") === "Full Time"
+                            ? "bg-orange-500/20 border-orange-500"
+                            : "bg-white/5 border-white/10 opacity-50 hover:opacity-80"
+                        }`}
+                      >
+                        <Clock className={`w-6 h-6 mb-2 ${watch("hours") === "Full Time" ? "text-orange-500" : ""}`} />
                         <span className="text-sm">Full Time</span>
                       </button>
-                      <button type="button" className="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center opacity-50">
-                        <Clock className="w-6 h-6 mb-2" />
+                      <button
+                        type="button"
+                        onClick={() => setValue("hours", "Part Time")}
+                        className={`p-4 rounded-2xl flex flex-col items-center border transition-all ${
+                          watch("hours") === "Part Time"
+                            ? "bg-orange-500/20 border-orange-500"
+                            : "bg-white/5 border-white/10 opacity-50 hover:opacity-80"
+                        }`}
+                      >
+                        <Clock className={`w-6 h-6 mb-2 ${watch("hours") === "Part Time" ? "text-orange-500" : ""}`} />
                         <span className="text-sm">Part Time</span>
                       </button>
                     </div>
@@ -447,13 +564,13 @@ export default function RegisterPage() {
                     <div className="text-right">PKR {watch("rate")}</div>
                   </div>
 
-                  <div className="pt-4">
-                    <label className="block text-sm font-medium text-gray-400 mb-3">Upload CNIC / Document</label>
-                    <div className="border-2 border-dashed border-white/10 rounded-2xl p-8 text-center hover:border-orange-500/50 transition-all cursor-pointer">
-                      <Camera className="w-10 h-10 mx-auto mb-2 text-gray-500" />
-                      <p className="text-sm text-gray-500">Tap to upload your ID card or certifications</p>
-                    </div>
-                  </div>
+                  <ImageUploadField
+                    label="ID Card / CNIC"
+                    optionalLabel="optional"
+                    hint="You can skip this and add it later"
+                    value={idCardImage}
+                    onChange={setIdCardImage}
+                  />
                 </div>
               </motion.div>
             )}
@@ -485,14 +602,28 @@ export default function RegisterPage() {
             ) : (
               <button
                 type="submit"
-                className="flex-[2] py-4 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 font-semibold shadow-lg shadow-green-500/20 hover:shadow-green-500/40 transition-all flex items-center justify-center gap-2"
+                disabled={isSubmitting || !isFirebaseConfigured()}
+                className="flex-[2] py-4 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 font-semibold shadow-lg shadow-green-500/20 hover:shadow-green-500/40 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                <CheckCircle2 className="w-5 h-5" />
-                {t("common.submit")}
+                {isSubmitting ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-5 h-5" />
+                    {t("common.submit")}
+                  </>
+                )}
               </button>
             )}
           </div>
         </form>
+
+        <p className="text-center text-gray-400 text-sm mt-8">
+          {t("auth.haveAccount")}{" "}
+          <Link href="/expert/login" className="text-orange-500 font-semibold hover:underline">
+            {t("auth.login")}
+          </Link>
+        </p>
       </div>
     </div>
   );

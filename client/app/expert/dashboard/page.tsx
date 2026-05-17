@@ -10,6 +10,9 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { LanguageToggle } from "@/components/LanguageToggle";
+import { useAuth } from "@/context/AuthContext";
+import { logoutExpert } from "@/services/expertAuth";
+import { useRouter } from "next/navigation";
 
 // --- Mock Data ---
 const stats = [
@@ -27,7 +30,22 @@ const recentBookings = [
 
 export default function ExpertDashboard() {
   const { t, isRTL } = useLanguage();
+  const { expert, user } = useAuth();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState("overview");
+
+  const handleLogout = async () => {
+    await logoutExpert();
+    router.push("/expert/login");
+  };
+
+  const displayName = expert?.name || user?.displayName || "Expert";
+  const initials = displayName
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 
   return (
     <div className="min-h-screen bg-[#050505] text-white flex">
@@ -63,13 +81,21 @@ export default function ExpertDashboard() {
 
         <div className="mt-auto pt-6 border-t border-white/5">
           <div className="flex items-center gap-3 p-2 bg-white/5 rounded-2xl">
-            <div className="w-10 h-10 rounded-full bg-orange-500 flex items-center justify-center font-bold">FR</div>
+            {expert?.profileImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={expert.profileImage} alt={displayName} className="w-10 h-10 rounded-full object-cover" />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-orange-500 flex items-center justify-center font-bold text-sm">{initials}</div>
+            )}
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">Faiz Rasool</p>
-              <p className="text-xs text-gray-500 truncate">AC Expert</p>
+              <p className="text-sm font-medium truncate">{displayName}</p>
+              <p className="text-xs text-gray-500 truncate">{expert?.category || "Expert"}</p>
             </div>
-            <CheckCircle2 className="w-4 h-4 text-blue-500" />
+            <CheckCircle2 className="w-4 h-4 text-blue-500 shrink-0" />
           </div>
+          <button type="button" onClick={handleLogout} className="w-full text-xs text-gray-400 hover:text-white py-2 rounded-lg hover:bg-white/5 mt-3">
+            Sign out
+          </button>
         </div>
       </aside>
 
@@ -78,7 +104,7 @@ export default function ExpertDashboard() {
         {/* Top Header */}
         <header className="flex justify-between items-center mb-10">
           <div>
-            <h2 className="text-2xl font-bold">{t("dash.welcome")}, Faiz!</h2>
+            <h2 className="text-2xl font-bold">{t("dash.welcome")}, {displayName.split(" ")[0]}!</h2>
             <p className="text-gray-500">Here's what's happening with your services today.</p>
           </div>
           <div className="flex items-center gap-4">

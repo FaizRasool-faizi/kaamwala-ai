@@ -28,6 +28,11 @@ export const MapPicker: React.FC<MapPickerProps> = ({ onLocationSelect, initialL
           ...loc,
           address: results[0].formatted_address,
         });
+      } else {
+        onLocationSelect({
+          ...loc,
+          address: "Selected Location",
+        });
       }
     });
   };
@@ -73,6 +78,11 @@ export const MapPicker: React.FC<MapPickerProps> = ({ onLocationSelect, initialL
             ...loc,
             address: results[0].formatted_address,
           });
+        } else {
+          onLocationSelect({
+            ...loc,
+            address: "Dragged Location",
+          });
         }
       });
     });
@@ -89,6 +99,11 @@ export const MapPicker: React.FC<MapPickerProps> = ({ onLocationSelect, initialL
           onLocationSelect({
             ...loc,
             address: results[0].formatted_address,
+          });
+        } else {
+          onLocationSelect({
+            ...loc,
+            address: "Clicked Location",
           });
         }
       });

@@ -1,0 +1,22 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Expert profiles: owner can read/write their own document
+    match /experts/{expertId} {
+      allow read: if request.auth != null && request.auth.uid == expertId;
+      allow create: if request.auth != null
+        && request.auth.uid == expertId
+        && request.resource.data.id == expertId
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.profileImage is string
+        && request.resource.data.profileImage.size() > 0;
+      allow update: if request.auth != null && request.auth.uid == expertId;
+      allow delete: if false;
+    }
+
+    // Optional general users collection (future customers)
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
