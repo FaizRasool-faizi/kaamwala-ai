@@ -63,6 +63,8 @@ const AGENTS = {
         - calculate_road_distance: Confirm if road distance was calculated successfully.
         - fallback_used: Boolean, true if Haversine or other fallback was used.
         - avg_eta: Average time for nearby experts to arrive.
+        - DISTANCE: Map of provider names to their calculated distance in KM (e.g., {"Aslam Electrician": "4.5 KM"})
+        - ARRIVAL: Map of provider names to their calculated arrival time in minutes (e.g., {"Aslam Electrician": "15 MIN"})
 
         Return JSON format:
         {
@@ -71,7 +73,13 @@ const AGENTS = {
             "confidence": 92,
             "success": true,
             "fallback_used": false,
-            "avg_eta": 25
+            "avg_eta": 25,
+            "DISTANCE": {
+                "Aslam Electrician": "4.5 KM"
+            },
+            "ARRIVAL": {
+                "Aslam Electrician": "15 MIN"
+            }
         }
         `
     },

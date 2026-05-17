@@ -1,4 +1,5 @@
 import { useOrchestratorStore, AgentName, ProviderOption, TraceEvent } from '../store/useOrchestratorStore';
+import { LAHORE_FALLBACK } from '@/lib/location';
 import axios from 'axios';
 import { io, Socket } from 'socket.io-client';
 
@@ -33,7 +34,7 @@ const getSocket = () => {
 };
 
 export const MockAiEngine = {
-  async processRequest(userMessage: string, radius?: number) {
+  async processRequest(userMessage: string, radius?: number, imageBase64?: string) {
     const store = useOrchestratorStore.getState();
     const socket = getSocket();
 
@@ -49,8 +50,9 @@ export const MockAiEngine = {
       
       const response = await axios.post(`${apiUrl}/api/chat`, {
         message: userMessage,
-        userLocation: store.userLocation || { lat: 31.4697, lng: 74.4108 },
-        radius: radius
+        userLocation: store.userLocation || LAHORE_FALLBACK,
+        radius: radius,
+        image: imageBase64
       });
 
       if (response.data.success) {

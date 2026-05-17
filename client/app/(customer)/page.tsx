@@ -2,11 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Activity, Mic, MapPin, Zap, Loader2, Terminal, Search, RotateCcw, SlidersHorizontal, ChevronRight } from "lucide-react";
+import Link from "next/link";
+import { Activity, Mic, MapPin, Zap, Loader2, Terminal, Search, RotateCcw, SlidersHorizontal, ChevronRight, User, Camera, X } from "lucide-react";
 import { ProviderOption, useOrchestratorStore } from "../../store/useOrchestratorStore";
 import { MockAiEngine } from "../../services/mockAiEngine";
+import {
+  fetchCurrentPosition,
+  GEOLOCATION_OPTIONS,
+  LAHORE_FALLBACK,
+} from "@/lib/location";
 import { TracePanel } from "../../components/features/TracePanel";
 import { ProviderCard } from "../../components/features/ProviderCard";
+import { LanguageToggle } from "../../components/LanguageToggle";
 import axios from "axios";
 
 type SpeechRecognitionResultEvent = Event & {
@@ -175,12 +182,7 @@ function ProviderMap({
 
     if (visibleMapStatus !== "ready" || !googleMaps || !mapElement) return;
 
-    const fallbackCenter = providers.find((provider) => provider.lat && provider.lng);
-    const center = userLocation || (
-      fallbackCenter?.lat && fallbackCenter?.lng
-        ? { lat: fallbackCenter.lat, lng: fallbackCenter.lng }
-        : { lat: 31.4697, lng: 74.4108 }
-    );
+    const center = userLocation ?? LAHORE_FALLBACK;
 
     if (!mapInstanceRef.current && googleMaps.Map) {
       mapInstanceRef.current = new googleMaps.Map(mapElement, {
@@ -193,7 +195,9 @@ function ProviderMap({
     }
 
     const map = mapInstanceRef.current;
-    if (!map) return; // Guard if map still couldn't be created
+    if (!map) return;
+
+    map.setCenter(center);
 
     markersRef.current.forEach((marker) => (marker as any).setMap?.(null));
     markersRef.current = [];
@@ -206,10 +210,10 @@ function ProviderMap({
     const bounds = new googleMaps.LatLngBounds();
     const points: GoogleLatLng[] = [];
 
-    if (userLocation) {
-      points.push(userLocation);
-      
-      const userDiv = document.createElement("div");
+    const activeUserLocation = userLocation ?? LAHORE_FALLBACK;
+    points.push(activeUserLocation);
+
+    const userDiv = document.createElement("div");
       userDiv.className = "relative flex items-center justify-center";
       userDiv.innerHTML = `
         <div class="absolute w-6 h-6 bg-blue-500/30 rounded-full animate-ping"></div>
@@ -217,14 +221,13 @@ function ProviderMap({
       `;
 
       markersRef.current.push(
-        new AdvancedMarkerElement({
+        new (googleMaps as any).marker.AdvancedMarkerElement({
           map,
-          position: userLocation,
+          position: activeUserLocation,
           title: "Your location",
           content: userDiv,
         })
       );
-    }
 
     providers.forEach((provider, index) => {
       if (typeof provider.lat !== "number" || typeof provider.lng !== "number") return;
@@ -235,7 +238,6 @@ function ProviderMap({
       const expertDiv = document.createElement("div");
       expertDiv.className = "group relative cursor-pointer";
       const color = provider.isBestFit ? "from-green-400 to-green-600" : "from-orange-400 to-orange-600";
-      const glow = provider.isBestFit ? "rgba(34,197,94,0.5)" : "rgba(249,115,22,0.5)";
       
       expertDiv.innerHTML = `
         <div class="relative flex flex-col items-center">
@@ -252,7 +254,7 @@ function ProviderMap({
       `;
 
       markersRef.current.push(
-        new AdvancedMarkerElement({
+        new (googleMaps as any).marker.AdvancedMarkerElement({
           map,
           position,
           title: provider.name,
@@ -261,10 +263,21 @@ function ProviderMap({
       );
     });
 
-    points.forEach((point) => bounds.extend(point));
-
     if (points.length > 1) {
-      map.fitBounds(bounds);
+      // Calculate distance between user and first expert
+      const p1 = points[0];
+      const p2 = points[1];
+      const dist = Math.sqrt(Math.pow(p1.lat - p2.lat, 2) + Math.pow(p1.lng - p2.lng, 2));
+      
+      // If distance is too large (> 0.5 degrees, roughly 50km), don't fit bounds
+      // This prevents zooming out to see the whole country/subcontinent
+      if (dist > 0.5) {
+        map.setCenter(activeUserLocation);
+        map.setZoom(13);
+      } else {
+        points.forEach((point) => bounds.extend(point));
+        map.fitBounds(bounds);
+      }
     } else {
       map.setCenter(center);
       map.setZoom(13);
@@ -325,38 +338,98 @@ export default function KaamWalaAI() {
   const userLocation = store.userLocation;
   const setUserLocation = store.setUserLocation;
 
-  // Auto-fetch location on mount and watch for changes
-  useEffect(() => {
-    if (navigator.geolocation) {
-      const watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-        },
-        (error) => console.log("Location watch error:", error.message),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-      return () => navigator.geolocation.clearWatch(watchId);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImageFile(file);
+      setImagePreview(URL.createObjectURL(file));
     }
+  };
+
+  const handleRemoveImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  // Real-time user location on mount, then watch for updates
+  useEffect(() => {
+    if (typeof window === "undefined" || !navigator.geolocation) {
+      setUserLocation(LAHORE_FALLBACK);
+      return;
+    }
+
+    let cancelled = false;
+
+    fetchCurrentPosition()
+      .then((coords) => {
+        if (!cancelled) setUserLocation(coords);
+      })
+      .catch((error) => {
+        console.warn("Geolocation unavailable, using Lahore fallback:", error);
+        if (!cancelled) setUserLocation(LAHORE_FALLBACK);
+      });
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        if (cancelled) return;
+        setUserLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+      },
+      (error) => {
+        console.warn("Location watch error:", error.message);
+      },
+      GEOLOCATION_OPTIONS
+    );
+
+    return () => {
+      cancelled = true;
+      navigator.geolocation.clearWatch(watchId);
+    };
   }, [setUserLocation]);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
 
-  // =========================
-  // STEP 1: CHAT REQUEST
-  // =========================
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = error => reject(error);
+    });
+  };
+
   const handleChat = async (messageOverride?: string) => {
     const userMessage = messageOverride ?? message;
 
-    if (!userMessage.trim() || loading) return;
+    if ((!userMessage.trim() && !imageFile) || loading) return;
 
-    setLastRequest(userMessage);
+    setLastRequest(userMessage || (imageFile ? `Uploaded Image (${imageFile.name})` : "Service Request"));
     setMessage(""); // clear input immediately
-    store.addMessage({ role: 'user', content: userMessage });
+    
+    let base64Image: string | undefined = undefined;
+    if (imageFile) {
+      try {
+        base64Image = await fileToBase64(imageFile);
+      } catch (err) {
+        console.error("Error converting image to Base64:", err);
+      }
+    }
+
+    store.addMessage({ role: 'user', content: userMessage || "Service request with uploaded image" });
+    
+    // Clear preview after sending request
+    handleRemoveImage();
     
     try {
-      await MockAiEngine.processRequest(userMessage, searchRadius);
+      await (MockAiEngine as any).processRequest(userMessage, searchRadius, base64Image);
     } catch (err) {
       console.error("Chat Error:", err);
     }
@@ -389,14 +462,11 @@ export default function KaamWalaAI() {
       },
       (error) => {
         console.error("Location Error:", error);
-        alert("Location permission nahi mili. Aap request phir bhi send kar sakte hain.");
+        alert("Location permission nahi mili. Lahore, Pakistan default use kiya ja raha hai.");
+        setUserLocation(LAHORE_FALLBACK);
         setLocating(false);
       },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 60000,
-      }
+      GEOLOCATION_OPTIONS
     );
   };
 
@@ -472,7 +542,7 @@ export default function KaamWalaAI() {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
       const response = await axios.post(`${apiUrl}/api/booking/create`, {
         providerId: selectedProviderId,
-        clientLocation: userLocation || { lat: 31.4697, lng: 74.4108 },
+        clientLocation: userLocation ?? LAHORE_FALLBACK,
         service: requestSummary,
         scheduledTime: selectedTime
       });
@@ -490,15 +560,56 @@ export default function KaamWalaAI() {
 
   return (
     <main className="min-h-screen bg-transparent text-white flex flex-col relative overflow-hidden">
-      <nav className="sticky top-0 z-40 border-b border-white/10 bg-black/55 px-4 py-3 backdrop-blur-2xl">
+      <nav className="sticky top-0 z-50 border-b border-white/10 bg-black/60 px-4 py-4 backdrop-blur-2xl">
         <div className="mx-auto flex max-w-[1500px] items-center justify-between">
-          <div className="text-lg font-black tracking-tight">
-            KaamWala <span className="text-orange-500">AI</span>
+          <div className="flex items-center gap-10">
+            <Link href="/" className="text-xl font-black tracking-tighter hover:opacity-80 transition-opacity">
+              KaamWala <span className="text-orange-500">AI</span>
+            </Link>
+            <div className="hidden items-center gap-8 text-[13px] font-medium text-slate-400 md:flex">
+              <Link href="/" className="text-white">Home</Link>
+              <Link href="#" className="hover:text-white transition-colors">Find Experts</Link>
+              <Link href="#" className="hover:text-white transition-colors">How it Works</Link>
+              <Link href="#" className="hover:text-white transition-colors">About</Link>
+            </div>
           </div>
-          <div className="hidden items-center gap-7 text-sm text-slate-300 md:flex">
-            <button className="hover:text-white">Home</button>
-            <button className="hover:text-white">My Bookings</button>
-            <div className="grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-white/5 font-semibold">N</div>
+
+          <div className="flex items-center gap-3">
+            {/* Expert Portal Access - Distinctive Style */}
+            <div className="hidden lg:flex items-center mr-2 pr-6 border-r border-white/10 gap-6">
+              <Link 
+                href="/expert/register" 
+                className="group relative flex items-center gap-2 text-[12px] font-bold text-orange-400 hover:text-orange-300 transition-all uppercase tracking-widest"
+              >
+                <div className="absolute -inset-2 rounded-lg bg-orange-500/0 group-hover:bg-orange-500/5 transition-all" />
+                <Zap size={14} className="fill-orange-400/20" />
+                Join as Expert
+              </Link>
+              <Link 
+                href="/expert/login" 
+                className="text-[12px] font-bold text-slate-400 hover:text-white transition-all uppercase tracking-widest"
+              >
+                Expert Login
+              </Link>
+            </div>
+
+            {/* Main Auth Actions */}
+            <div className="flex items-center gap-2">
+              <LanguageToggle />
+              <Link 
+                href="/login" 
+                className="px-5 py-2 text-[13px] font-semibold text-slate-300 hover:text-white transition-colors"
+              >
+                Login
+              </Link>
+              <Link 
+                href="/register" 
+                className="relative group overflow-hidden px-6 py-2.5 text-[13px] font-bold bg-white text-black rounded-full transition-all hover:pr-8 active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.1)]"
+              >
+                <span className="relative z-10">Get Started</span>
+                <ChevronRight size={14} className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all" />
+              </Link>
+            </div>
           </div>
         </div>
       </nav>
@@ -542,6 +653,14 @@ export default function KaamWalaAI() {
 
           {/* Centered Search Box */}
           <div className="w-full max-w-3xl flex flex-col gap-4">
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              className="hidden" 
+              accept="image/*" 
+              onChange={handleImageChange} 
+            />
+            
             <div className="flex gap-2 relative bg-black/60 p-2 rounded-2xl border border-white/10 shadow-[0_0_40px_rgba(249,115,22,0.15)] backdrop-blur-xl group hover:border-orange-500/30 transition-all">
               <input
                 value={message}
@@ -566,6 +685,19 @@ export default function KaamWalaAI() {
               </button>
               <button
                 type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={loading}
+                className={`p-3 rounded-xl transition-all cursor-pointer ${
+                  imagePreview
+                    ? "bg-orange-500/20 text-orange-400 border border-orange-500/30"
+                    : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
+                }`}
+                title="Camera se photo upload karein"
+              >
+                <Camera className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
                 onClick={handleVoiceInput}
                 disabled={loading}
                 className={`p-3 rounded-xl transition-all ${
@@ -579,12 +711,37 @@ export default function KaamWalaAI() {
               <button
                 type="button"
                 onClick={() => void handleChat()}
-                disabled={loading || !message.trim()}
-                className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white px-6 rounded-xl font-bold transition-all shadow-[0_0_15px_rgba(249,115,22,0.4)]"
+                disabled={loading || (!message.trim() && !imageFile)}
+                className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white px-6 rounded-xl font-bold transition-all shadow-[0_0_15px_rgba(249,115,22,0.4)] cursor-pointer"
               >
                 {loading ? <Activity className="w-5 h-5 animate-spin" /> : "Orchestrate"}
               </button>
             </div>
+
+            {imagePreview && (
+              <div className="relative self-start flex items-center gap-3 bg-slate-900/90 border border-slate-700/80 p-2.5 rounded-xl shadow-xl backdrop-blur-md overflow-hidden max-w-xs group animate-fadeIn mt-1 text-left">
+                <img
+                  src={imagePreview}
+                  alt="Upload preview"
+                  className="w-12 h-12 rounded-lg object-cover border border-slate-700"
+                />
+                <div className="flex flex-col min-w-0 pr-6">
+                  <span className="text-xs font-semibold text-slate-200 truncate max-w-[150px]">
+                    {imageFile?.name}
+                  </span>
+                  <span className="text-[10px] text-orange-400">
+                    Ready for AI Orchestration!
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRemoveImage}
+                  className="absolute right-1.5 top-1.5 p-1 bg-slate-800 hover:bg-red-500/20 hover:text-red-400 rounded-lg text-slate-400 transition-all cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
 
             <div className="flex flex-wrap justify-center gap-2 mt-4 items-center">
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mr-2">Search Radius:</span>

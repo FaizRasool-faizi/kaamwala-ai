@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Nastaliq+Urdu:wght@400;700&family=Outfit:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -53,12 +54,18 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+
+
 body {
   background: linear-gradient(135deg, var(--color-pitch-black) 0%, var(--color-deep-navy) 100%);
   background-attachment: fixed;
   color: var(--color-foreground);
-  font-family: "Inter", Arial, Helvetica, sans-serif;
+  font-family: "Outfit", "Inter", sans-serif;
   min-height: 100vh;
+}
+
+[lang="ur"] body {
+  font-family: "Noto Nastaliq Urdu", "Outfit", sans-serif;
 }
 
 :root {

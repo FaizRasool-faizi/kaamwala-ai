@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const axios = require('axios');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { Server } = require('socket.io');
 const { engine, AGENTS } = require('./antigravity.config');
 const providers = require('./data/providers');
@@ -33,6 +34,14 @@ const serviceAliases = {
 };
 
 const FUEL_RATE_PER_KM = 50; // Configurable Rs/KM
+const LAHORE_FALLBACK = { lat: 31.5204, lng: 74.3587 };
+
+function validateUserLocation(location) {
+    if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number') {
+        return { ...LAHORE_FALLBACK };
+    }
+    return { lat: location.lat, lng: location.lng };
+}
 
 function toRad(value) {
     return (value * Math.PI) / 180;
@@ -257,21 +266,99 @@ async function buildRankedOptions(intentData, availableProviders, userLocation, 
     return ranked;
 }
 
+async function analyzeImageAndText(message, base64Image) {
+    if (!process.env.GEMINI_API_KEY) {
+        throw new Error("GEMINI_API_KEY is not configured in .env file.");
+    }
+    
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    // Parse base64 prefix
+    let base64Data = base64Image;
+    let mimeType = "image/jpeg"; // default
+
+    if (base64Image.startsWith("data:")) {
+        const match = base64Image.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) {
+            mimeType = match[1];
+            base64Data = match[2];
+        }
+    }
+
+    const imagePart = {
+        inlineData: {
+            data: base64Data,
+            mimeType: mimeType
+        }
+    };
+
+    const prompt = `
+    Analyze this uploaded maintenance problem picture along with user's written message: "${message || 'No message provided'}".
+    Extract the following details as a valid JSON object:
+    - service: Best fitting standard service out of (Electrician, Plumber, AC Technician, Carpenter)
+    - urgency: Level of emergency (High, Medium, Low) based on water damage, sparking hazard, safety threat, etc.
+    - intent: Clean summary statement of what is broken.
+    - normalized_query: Detailed technical summary of what needs to be fixed.
+    - language: "Roman Urdu" or "Urdu" or "English" based on user message.
+
+    Return JSON format:
+    {
+        "action": "Vision Analysis Complete",
+        "reasoning": "Detected [service] request with [urgency] urgency based on image analysis.",
+        "confidence": 98,
+        "service": "string",
+        "urgency": "string",
+        "intent": "string",
+        "normalized_query": "string",
+        "language": "string"
+    }
+    `;
+
+    const result = await model.generateContent([prompt, imagePart]);
+    const responseText = await result.response.text();
+    
+    // Clean up markdown block styling from model output
+    const cleanJsonText = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
+    return JSON.parse(cleanJsonText);
+}
 
 // server/index.js - Updated chat pipeline
 
 app.post('/api/chat', async (req, res) => {
-    const { message, userLocation, radius } = req.body;
+    const { message, image, userLocation, radius } = req.body;
 
     try {
         engine.logs = []; // Reset logs for new request
 
-        // 1. INTENT & SERVICE DETECTION
-        const intentResult = await engine.runAgent(
-            AGENTS.INTENT_AGENT.name,
-            AGENTS.INTENT_AGENT.prompt,
-            message
-        );
+        const validatedUserLocation = validateUserLocation(userLocation);
+
+        let intentResult = null;
+
+        // 1. INTENT & SERVICE DETECTION (VISION AGENT OR TEXT FALLBACK)
+        if (image) {
+            try {
+                console.log(`[VISION_ENGINE] Initiating Gemini vision analysis...`);
+                engine.emitTrace("Vision Agent", "Thinking...", "Analyzing image and text context together using Gemini Multimodal API...", 98, 0, "info", "pending");
+                const startTime = Date.now();
+                intentResult = await analyzeImageAndText(message, image);
+                const latencyMs = Date.now() - startTime;
+                
+                engine.emitTrace("Vision Agent", "Vision Analysis Complete", intentResult.reasoning || "Successfully analyzed visual and textual context.", 98, latencyMs, "info", "success", intentResult);
+            } catch (err) {
+                console.error("[VISION ERROR]:", err);
+                engine.emitTrace("Vision Agent", "Vision Analysis Failed", `Fallback to text analysis: ${err.message}`, 0, 0, "warning", "error");
+            }
+        }
+
+        if (!intentResult) {
+            intentResult = await engine.runAgent(
+                AGENTS.INTENT_AGENT.name,
+                AGENTS.INTENT_AGENT.prompt,
+                message
+            );
+        }
+        
         const service = intentResult.service || "AC Technician";
         
         // 2. LOCATION INTELLIGENCE
@@ -282,24 +369,49 @@ app.post('/api/chat', async (req, res) => {
             { intent: intentResult }
         );
 
-        // 3. DISTANCE & ETA ENGINE (Internal logic + Agent log)
-        const eligibleProviders = providers.filter(p => serviceMatches(service, p.service));
+        // 3. DISTANCE & ETA ENGINE — experts use fixed Lahore hotspot coordinates
+        const localProviders = JSON.parse(JSON.stringify(providers));
+
+        // Filter by service, but if none match, take all (for demo robustness)
+        let eligibleProviders = localProviders.filter(p => serviceMatches(service, p.service));
+        if (eligibleProviders.length === 0) {
+            eligibleProviders = localProviders.slice(0, 3); // Fallback to first 3 experts
+        }
         
-        const distanceMatrix = await getBulkRoadDistances(userLocation || { lat: 31.4697, lng: 74.4108 }, eligibleProviders.map(p => ({
+        const distanceMatrix = await getBulkRoadDistances(validatedUserLocation, eligibleProviders.map(p => ({
             id: p.id,
             lat: expertLocations.get(p.id)?.lat || p.lat,
             lng: expertLocations.get(p.id)?.lng || p.lng
         })));
 
+        // Recalculate and align DISTANCE and ARRIVAL payload metrics for Orchestration Trace
+        const traceDistance = {};
+        const traceArrival = {};
+        eligibleProviders.forEach(p => {
+            const roadData = distanceMatrix[p.id];
+            if (roadData) {
+                traceDistance[p.name] = `${roadData.distanceKm.toFixed(1)} KM`;
+                traceArrival[p.name] = `${roadData.durationMins} MIN`;
+            } else {
+                traceDistance[p.name] = "N/A";
+                traceArrival[p.name] = "N/A";
+            }
+        });
+
         const distanceLog = await engine.runAgent(
             AGENTS.DISTANCE_AGENT.name,
             AGENTS.DISTANCE_AGENT.prompt,
-            `Analyzed ${eligibleProviders.length} providers. Matrix status: ${Object.keys(distanceMatrix).length > 0 ? 'Success' : 'Fallback Used'}`,
-            { matrix: distanceMatrix, userLocation }
+            `Analyzed ${eligibleProviders.length} providers. Location: ${userLocation ? 'Real' : 'Default'}.`,
+            { 
+                matrix: distanceMatrix, 
+                userLocation: validatedUserLocation,
+                DISTANCE: traceDistance,
+                ARRIVAL: traceArrival
+            }
         );
 
         // 4. EXPERT RANKING AGENT
-        const rankedOptions = await buildRankedOptions(intentResult, providers, userLocation, radius);
+        const rankedOptions = await buildRankedOptions(intentResult, eligibleProviders, validatedUserLocation, radius);
         
         const rankingResult = await engine.runAgent(
             AGENTS.RANKING_AGENT.name,
@@ -370,14 +482,18 @@ async function getRoadDistance(origin, destination) {
 app.post('/api/booking/create', async (req, res) => {
     const { providerId, clientLocation, service } = req.body;
     const bookingId = `BK-${Date.now()}`;
-    const provider = providers.find(p => p.id === providerId);
+
+    const validatedClientLocation = validateUserLocation(clientLocation);
+
+    const baseProvider = providers.find(p => p.id === Number(providerId));
+    const provider = baseProvider ? JSON.parse(JSON.stringify(baseProvider)) : null;
 
     const booking = {
         id: bookingId,
         providerId,
         providerName: provider?.name,
         service,
-        clientLocation,
+        clientLocation: validatedClientLocation,
         expertLocation: { lat: provider?.lat, lng: provider?.lng },
         status: "SCHEDULED",
         scheduledTime: null,
@@ -396,7 +512,7 @@ app.post('/api/booking/create', async (req, res) => {
     }
 
     // Calculate initial distance and charges
-    const roadData = await getRoadDistance(booking.expertLocation, clientLocation);
+    const roadData = await getRoadDistance(booking.expertLocation, validatedClientLocation);
     if (roadData) {
         booking.distanceKm = Number(roadData.distanceKm.toFixed(1));
         booking.etaMinutes = roadData.durationMins;
