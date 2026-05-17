@@ -19,8 +19,10 @@ export const MapPicker: React.FC<MapPickerProps> = ({ onLocationSelect, initialL
     mapInstance.setCenter(loc);
     markerInstance.setPosition(loc);
 
+    if (typeof window === "undefined" || !window.google) return;
+
     const geocoder = new window.google.maps.Geocoder();
-    geocoder.geocode({ location: loc }, (results, status) => {
+    geocoder.geocode({ location: loc }, (results: any, status: any) => {
       if (status === "OK" && results?.[0]) {
         onLocationSelect({
           ...loc,
@@ -63,8 +65,9 @@ export const MapPicker: React.FC<MapPickerProps> = ({ onLocationSelect, initialL
       if (!pos) return;
       const loc = { lat: pos.lat(), lng: pos.lng() };
 
+      if (!window.google) return;
       const geocoder = new window.google.maps.Geocoder();
-      geocoder.geocode({ location: loc }, (results, status) => {
+      geocoder.geocode({ location: loc }, (results: any, status: any) => {
         if (status === "OK" && results?.[0]) {
           onLocationSelect({
             ...loc,
@@ -79,8 +82,9 @@ export const MapPicker: React.FC<MapPickerProps> = ({ onLocationSelect, initialL
       markerInstance.setPosition(e.latLng);
       const loc = { lat: e.latLng.lat(), lng: e.latLng.lng() };
 
+      if (!window.google) return;
       const geocoder = new window.google.maps.Geocoder();
-      geocoder.geocode({ location: loc }, (results, status) => {
+      geocoder.geocode({ location: loc }, (results: any, status: any) => {
         if (status === "OK" && results?.[0]) {
           onLocationSelect({
             ...loc,

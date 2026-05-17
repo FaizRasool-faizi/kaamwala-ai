@@ -28,6 +28,7 @@ type BrowserSpeechRecognition = {
   lang: string;
   interimResults: boolean;
   continuous: boolean;
+  onstart?: (() => void) | null;
   onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
   onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
   onend: (() => void) | null;
@@ -101,7 +102,7 @@ declare global {
   interface Window {
     SpeechRecognition?: SpeechRecognitionConstructor;
     webkitSpeechRecognition?: SpeechRecognitionConstructor;
-    google?: GoogleNamespace;
+    google?: any;
     initKaamwalaMap?: () => void;
   }
 }

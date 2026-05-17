@@ -5,7 +5,8 @@ import { motion } from "framer-motion";
 import { 
   LayoutDashboard, Calendar, Wallet, User as UserIcon, Settings, 
   Bell, Search, TrendingUp, Star, Clock, CheckCircle2,
-  MoreVertical, Filter, Download, ArrowUpRight, ArrowDownRight
+  MoreVertical, Filter, Download, ArrowUpRight, ArrowDownRight,
+  ShieldCheck
 } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { LanguageToggle } from "@/components/LanguageToggle";

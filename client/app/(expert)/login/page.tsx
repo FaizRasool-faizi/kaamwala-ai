@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Mail, Lock, LogIn, ArrowRight, Github } from "lucide-react";
+import { Mail, Lock, ArrowRight } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { useRouter } from "next/navigation";
