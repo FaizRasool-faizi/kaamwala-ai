@@ -14,7 +14,11 @@ import {
 import { TracePanel } from "../../components/features/TracePanel";
 import { ProviderCard } from "../../components/features/ProviderCard";
 import { LanguageToggle } from "../../components/LanguageToggle";
+import { useAuth } from "@/context/AuthContext";
+import { logoutUser } from "@/services/userAuth";
 import axios from "axios";
+import { getFirebaseDb } from "@/lib/firebase";
+import { doc, setDoc } from "firebase/firestore";
 
 type SpeechRecognitionResultEvent = Event & {
   results: SpeechRecognitionResultList;
@@ -319,6 +323,7 @@ function ProviderMap({
 }
 
 export default function KaamWalaAI() {
+  const { user, customer, refreshCustomer } = useAuth();
   const [message, setMessage] = useState("");
   const [lastRequest, setLastRequest] = useState("");
   const [compareMode, setCompareMode] = useState(false);
@@ -549,6 +554,34 @@ export default function KaamWalaAI() {
       });
 
       if (response.data.success) {
+        const bookingData = response.data.booking;
+        
+        // Save to Firestore bookings collection so it is visible to real experts!
+        try {
+          const db = getFirebaseDb();
+          const rate = selectedProvider?.rate ? `PKR ${selectedProvider.rate}` : "PKR 2,500";
+          
+          await setDoc(doc(db, "bookings", response.data.bookingId), {
+            id: response.data.bookingId,
+            providerId: String(selectedProviderId),
+            providerName: selectedProvider?.name || "Expert",
+            customerName: "Ahmed Khan",
+            service: requestSummary,
+            clientLocation: bookingData.clientLocation || userLocation || LAHORE_FALLBACK,
+            expertLocation: bookingData.expertLocation || { lat: selectedProvider?.lat, lng: selectedProvider?.lng } || LAHORE_FALLBACK,
+            status: "SCHEDULED",
+            scheduledTime: selectedTime,
+            timestamp: new Date().toISOString(),
+            amount: rate,
+            travelCharges: bookingData.travelCharges || 250,
+            distanceKm: bookingData.distanceKm || 0,
+            etaMinutes: bookingData.etaMinutes || 0
+          });
+          console.log("Persisted booking to Firestore successfully!");
+        } catch (dbErr) {
+          console.error("Failed to save booking to Firestore:", dbErr);
+        }
+
         setActiveBookingId(response.data.bookingId);
         setBookingStep("success");
       }
@@ -597,19 +630,41 @@ export default function KaamWalaAI() {
             {/* Main Auth Actions */}
             <div className="flex items-center gap-2">
               <LanguageToggle />
-              <Link 
-                href="/login" 
-                className="px-5 py-2 text-[13px] font-semibold text-slate-300 hover:text-white transition-colors"
-              >
-                Login
-              </Link>
-              <Link 
-                href="/register" 
-                className="relative group overflow-hidden px-6 py-2.5 text-[13px] font-bold bg-white text-black rounded-full transition-all hover:pr-8 active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.1)]"
-              >
-                <span className="relative z-10">Get Started</span>
-                <ChevronRight size={14} className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all" />
-              </Link>
+              {user ? (
+                <div className="flex items-center gap-4 pl-4 border-l border-white/10">
+                  <div className="flex flex-col text-right">
+                    <span className="text-[11px] text-slate-500 uppercase tracking-widest font-black">Customer</span>
+                    <span className="text-sm font-bold text-white max-w-[150px] truncate">
+                      {customer?.name || user.displayName || user.email?.split("@")[0] || "User"}
+                    </span>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      await logoutUser();
+                      window.location.reload();
+                    }}
+                    className="px-4 py-2 rounded-full border border-red-500/30 bg-red-500/10 text-red-400 text-[12px] font-bold uppercase tracking-wider hover:bg-red-500/20 hover:text-white transition-all active:scale-95 shadow-md shadow-red-500/5 cursor-pointer"
+                  >
+                    Logout
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <Link 
+                    href="/login" 
+                    className="px-5 py-2 text-[13px] font-semibold text-slate-300 hover:text-white transition-colors"
+                  >
+                    Login
+                  </Link>
+                  <Link 
+                    href="/register" 
+                    className="relative group overflow-hidden px-6 py-2.5 text-[13px] font-bold bg-white text-black rounded-full transition-all hover:pr-8 active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.1)]"
+                  >
+                    <span className="relative z-10">Get Started</span>
+                    <ChevronRight size={14} className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all" />
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </div>

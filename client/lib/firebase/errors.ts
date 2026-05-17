@@ -25,6 +25,10 @@ export function getFirebaseErrorMessage(error: unknown): string {
       return "Too many attempts. Please wait a moment and try again.";
     case "auth/popup-closed-by-user":
       return "Sign-in was cancelled.";
+    case "auth/missing-email":
+      return "Please enter your email address.";
+    case "auth/account-exists-with-different-credential":
+      return "An account already exists with this email. Sign in with email and password instead.";
     case "auth/network-request-failed":
       return "Network error. Check your connection and try again.";
     case "storage/unauthorized":

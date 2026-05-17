@@ -2,6 +2,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithPopup,
+  sendPasswordResetEmail,
   GoogleAuthProvider,
   signOut,
   updateProfile,
@@ -152,7 +153,17 @@ export async function loginExpert(email: string, password: string): Promise<User
   }
 }
 
-/** Google sign-in (optional) */
+/** Send password reset email to expert */
+export async function resetExpertPassword(email: string): Promise<void> {
+  try {
+    const auth = getFirebaseAuth();
+    await sendPasswordResetEmail(auth, email.trim().toLowerCase());
+  } catch (error) {
+    throw new Error(getFirebaseErrorMessage(error));
+  }
+}
+
+/** Google sign-in */
 export async function loginWithGoogle(): Promise<User> {
   try {
     const auth = getFirebaseAuth();

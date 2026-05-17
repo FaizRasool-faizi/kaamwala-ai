@@ -19,6 +19,7 @@ export interface ExpertProfile {
   experience?: string;
   rate?: string;
   hours?: string;
+  bio?: string;
   createdAt: string;
 }
 

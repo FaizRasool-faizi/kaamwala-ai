@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import Link from 'next/link';
 import { Star, ShieldCheck, Clock, SlidersHorizontal, CheckCircle2, MoreVertical, BadgeCheck, Send, MapPin, Bike, Zap } from 'lucide-react';
 import { ProviderOption } from '../../store/useOrchestratorStore';
 
@@ -33,7 +34,7 @@ export function ProviderCard({ provider, onBook, onCompare, isSelected, isTopMat
       )}
       
       {/* Image Container */}
-      <div className="relative aspect-[4/3] overflow-hidden">
+      <Link href={`/expert/${provider.id}`} className="block relative aspect-[4/3] overflow-hidden">
         <img 
           src={avatarUrl} 
           alt={provider.name} 
@@ -70,18 +71,18 @@ export function ProviderCard({ provider, onBook, onCompare, isSelected, isTopMat
             {provider.priceEstimate}
           </div>
         </div>
-      </div>
+      </Link>
 
       {/* Content */}
       <div className="flex-1 p-5 flex flex-col">
         <div className="flex items-start justify-between gap-2 mb-3">
-          <div className="min-w-0">
-            <h3 className="flex items-center gap-1.5 text-lg font-bold text-white group-hover:text-orange-400 transition-colors truncate">
+          <Link href={`/expert/${provider.id}`} className="min-w-0 flex-1 block group/title">
+            <h3 className="flex items-center gap-1.5 text-lg font-bold text-white group-hover/title:text-orange-400 transition-colors truncate">
               {provider.name}
               <BadgeCheck className="h-4 w-4 shrink-0 fill-blue-500 text-white" />
             </h3>
             <p className="text-xs text-slate-400 mt-0.5 truncate">{provider.specialization}</p>
-          </div>
+          </Link>
           <button className="text-slate-500 hover:text-white transition p-1">
             <MoreVertical className="h-4 w-4" />
           </button>

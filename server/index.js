@@ -36,6 +36,104 @@ const serviceAliases = {
 const FUEL_RATE_PER_KM = 50; // Configurable Rs/KM
 const LAHORE_FALLBACK = { lat: 31.5204, lng: 74.3587 };
 
+function mapCategoryToService(category) {
+    const cat = String(category || "").toLowerCase().trim();
+    if (cat === "ac") return "AC Technician";
+    if (cat === "electrician") return "Electrician";
+    if (cat === "plumber") return "Plumber";
+    if (cat === "carpenter") return "Carpenter";
+    if (cat === "cleaning") return "Home Cleaning";
+    if (cat === "tutor") return "Tutor";
+    if (cat === "painter") return "Painter";
+    if (cat === "mechanic") return "Mechanic";
+    return category ? category.charAt(0).toUpperCase() + category.slice(1) : "AC Technician";
+}
+
+async function getRealExperts() {
+    try {
+        const projectId = process.env.GOOGLE_CLOUD_PROJECT || "ai-sales-engine-490611";
+        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/experts`;
+        const response = await axios.get(url, { timeout: 4000 });
+        const documents = response.data.documents || [];
+        
+        return documents.map(doc => {
+            const fields = doc.fields;
+            if (!fields) return null;
+            
+            const id = fields.id?.stringValue || doc.name.split("/").pop();
+            const name = fields.name?.stringValue || "Registered Expert";
+            const category = fields.category?.stringValue || "ac";
+            const service = mapCategoryToService(category);
+            
+            let address = "Lahore, Pakistan";
+            let lat = LAHORE_FALLBACK.lat;
+            let lng = LAHORE_FALLBACK.lng;
+            
+            if (fields.location?.mapValue?.fields) {
+                const locFields = fields.location.mapValue.fields;
+                address = locFields.address?.stringValue || address;
+                if (locFields.lat?.doubleValue !== undefined) {
+                    lat = Number(locFields.lat.doubleValue);
+                } else if (locFields.lat?.integerValue !== undefined) {
+                    lat = Number(locFields.lat.integerValue);
+                }
+                if (locFields.lng?.doubleValue !== undefined) {
+                    lng = Number(locFields.lng.doubleValue);
+                } else if (locFields.lng?.integerValue !== undefined) {
+                    lng = Number(locFields.lng.integerValue);
+                }
+            }
+            
+            const phone = fields.phone?.stringValue || "";
+            const rateVal = fields.rate?.stringValue || "1500";
+            
+            // Extract rich profile properties from Firestore with sensible defaults
+            let rating = 4.7;
+            if (fields.rating?.doubleValue !== undefined) rating = Number(fields.rating.doubleValue);
+            else if (fields.rating?.integerValue !== undefined) rating = Number(fields.rating.integerValue);
+
+            let jobsCompleted = 120;
+            if (fields.jobsCompleted?.integerValue !== undefined) jobsCompleted = Number(fields.jobsCompleted.integerValue);
+            else if (fields.jobsCompleted?.doubleValue !== undefined) jobsCompleted = Number(fields.jobsCompleted.doubleValue);
+
+            let reliabilityScore = 95;
+            if (fields.reliabilityScore?.integerValue !== undefined) reliabilityScore = Number(fields.reliabilityScore.integerValue);
+            else if (fields.reliabilityScore?.doubleValue !== undefined) reliabilityScore = Number(fields.reliabilityScore.doubleValue);
+
+            const profileImage = fields.profileImage?.stringValue || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(name)}`;
+            const bio = fields.bio?.stringValue || "Professional technician dedicated to providing outstanding service with top-tier safety and speed.";
+            const skills = fields.skills?.stringValue || service;
+            const experience = fields.experience?.stringValue || "5 years";
+            const hours = fields.hours?.stringValue || "Full Time";
+            const status = fields.status?.stringValue || "Available";
+            
+            return {
+                id: id,
+                name: name,
+                service: service,
+                location: address,
+                rating: rating,
+                status: status,
+                lat: lat,
+                lng: lng,
+                phone: phone,
+                reliabilityScore: reliabilityScore,
+                jobsCompleted: jobsCompleted,
+                rate: rateVal,
+                avatarUrl: profileImage,
+                skills: skills,
+                specialization: skills,
+                bio: bio,
+                experience: experience,
+                hours: hours
+            };
+        }).filter(Boolean);
+    } catch (err) {
+        console.error("[FIRESTORE_REST] Failed to fetch real experts:", err.message);
+        return [];
+    }
+}
+
 function validateUserLocation(location) {
     if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number') {
         return { ...LAHORE_FALLBACK };
@@ -112,10 +210,10 @@ async function getBulkRoadDistances(userLocation, destinations) {
     // Initialize results with Haversine fallback
     destinations.forEach(dest => {
         const haversineDist = getDistanceKm(userLocation, { lat: dest.lat, lng: dest.lng });
-        const roadEstimate = haversineDist ? haversineDist * 1.3 : null;
+        const roadEstimate = haversineDist !== null ? haversineDist * 1.3 : null;
         results[dest.id] = {
             distanceKm: roadEstimate,
-            durationMins: roadEstimate ? Math.max(5, Math.round(roadEstimate * 3.5)) : null,
+            durationMins: roadEstimate !== null ? Math.max(5, Math.round(roadEstimate * 3.5)) : null,
             method: 'haversine_estimate'
         };
     });
@@ -259,7 +357,17 @@ async function buildRankedOptions(intentData, availableProviders, userLocation, 
                     ? `AI Analysis: ${provider.name} is the optimal choice for your ${provider.service} request. Ranked #1 with ${provider.reliabilityScore}% reliability across ${provider.jobsCompleted} jobs. ETA is ${provider.etaMinutes} mins with high matching confidence.`
                     : `${provider.name} is a strong backup with ${provider.rating} rating and ${provider.jobsCompleted} successful jobs.`,
                 isBestFit: index === 0,
-                calcMethod: provider.calcMethod
+                calcMethod: provider.calcMethod,
+                
+                // Add rich database fields
+                avatarUrl: provider.avatarUrl,
+                skills: provider.skills,
+                specialization: provider.specialization,
+                bio: provider.bio,
+                experience: provider.experience,
+                hours: provider.hours,
+                rate: provider.rate,
+                priceEstimate: provider.rate ? `PKR ${Number(provider.rate).toLocaleString()}` : "PKR 1,500"
             };
         });
 
@@ -370,7 +478,8 @@ app.post('/api/chat', async (req, res) => {
         );
 
         // 3. DISTANCE & ETA ENGINE — experts use fixed Lahore hotspot coordinates
-        const localProviders = JSON.parse(JSON.stringify(providers));
+        const realExperts = await getRealExperts();
+        const localProviders = realExperts;
 
         // Filter by service, but if none match, take all (for demo robustness)
         let eligibleProviders = localProviders.filter(p => serviceMatches(service, p.service));
@@ -389,9 +498,9 @@ app.post('/api/chat', async (req, res) => {
         const traceArrival = {};
         eligibleProviders.forEach(p => {
             const roadData = distanceMatrix[p.id];
-            if (roadData) {
+            if (roadData && roadData.distanceKm !== null) {
                 traceDistance[p.name] = `${roadData.distanceKm.toFixed(1)} KM`;
-                traceArrival[p.name] = `${roadData.durationMins} MIN`;
+                traceArrival[p.name] = roadData.durationMins !== null ? `${roadData.durationMins} MIN` : "N/A";
             } else {
                 traceDistance[p.name] = "N/A";
                 traceArrival[p.name] = "N/A";
@@ -485,7 +594,9 @@ app.post('/api/booking/create', async (req, res) => {
 
     const validatedClientLocation = validateUserLocation(clientLocation);
 
-    const baseProvider = providers.find(p => p.id === Number(providerId));
+    const realExperts = await getRealExperts();
+    const allProviders = realExperts;
+    const baseProvider = allProviders.find(p => String(p.id) === String(providerId));
     const provider = baseProvider ? JSON.parse(JSON.stringify(baseProvider)) : null;
 
     const booking = {
@@ -513,9 +624,9 @@ app.post('/api/booking/create', async (req, res) => {
 
     // Calculate initial distance and charges
     const roadData = await getRoadDistance(booking.expertLocation, validatedClientLocation);
-    if (roadData) {
+    if (roadData && roadData.distanceKm !== null) {
         booking.distanceKm = Number(roadData.distanceKm.toFixed(1));
-        booking.etaMinutes = roadData.durationMins;
+        booking.etaMinutes = roadData.durationMins || 0;
         booking.travelCharges = Math.max(150, Math.round(booking.distanceKm * FUEL_RATE_PER_KM));
     } else {
         const dist = getDistanceKm(booking.expertLocation, clientLocation);
@@ -545,6 +656,51 @@ app.get('/api/booking/:id', (req, res) => {
     const booking = activeBookings.get(req.params.id);
     if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
     res.json({ success: true, booking });
+});
+
+app.post('/api/chat/moderate', async (req, res) => {
+    const { message, violationsCount } = req.body;
+    try {
+        if (!process.env.GEMINI_API_KEY) {
+            return res.json({ inappropriate: false, warning: null, restricted: false });
+        }
+        
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+        const prompt = `
+        You are a professional chat moderation AI agent for the "KaamWala AI" home service marketplace.
+        Analyze the following chat message between a user and a service expert:
+        "${message}"
+        
+        Your task is to detect inappropriate, abusive, offensive, vulgar, sexual, disrespectful, or "below the belt" language in English, Urdu, or Roman Urdu.
+        
+        Respond ONLY with a JSON object in this format:
+        {
+            "inappropriate": true or false,
+            "reason": "Brief reason in English if inappropriate, otherwise null",
+            "warningMessage": "Please maintain respectful communication"
+        }
+        `;
+        
+        const result = await model.generateContent(prompt);
+        const responseText = await result.response.text();
+        const cleanJsonText = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
+        const analysis = JSON.parse(cleanJsonText);
+        
+        const isViolated = analysis.inappropriate === true;
+        
+        res.json({
+            success: true,
+            inappropriate: isViolated,
+            reason: analysis.reason || null,
+            warning: isViolated ? (analysis.warningMessage || "Please maintain respectful communication") : null,
+            restricted: isViolated && Number(violationsCount) >= 1 // Restrict if this is the 2nd violation (violationsCount starts at 1 from first violation)
+        });
+    } catch (err) {
+        console.error("Moderation Error:", err.message);
+        res.json({ success: true, inappropriate: false, warning: null, restricted: false });
+    }
 });
 
 // Socket.IO Events

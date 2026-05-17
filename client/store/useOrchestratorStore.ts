@@ -39,6 +39,11 @@ export interface ProviderOption {
   availabilityStatus?: 'Available Now' | 'Available Later' | 'Busy';
   travelCharges?: number;
   comparisonHighlight?: string;
+  bio?: string;
+  skills?: string;
+  experience?: string;
+  hours?: string;
+  rate?: string;
 }
 
 interface ChatMessage {
