@@ -18,7 +18,7 @@ import { useAuth } from "@/context/AuthContext";
 import { logoutUser } from "@/services/userAuth";
 import axios from "axios";
 import { getFirebaseDb } from "@/lib/firebase";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc } from "firebase/firestore";
 
 type SpeechRecognitionResultEvent = Event & {
   results: SpeechRecognitionResultList;
@@ -443,7 +443,7 @@ export default function KaamWalaAI() {
 
   const submitted = messages.length > 0;
   const topProvider = providerOptions[0];
-  const selectedProvider = providerOptions.find((provider) => provider.id === selectedProviderId);
+  const selectedProvider = providerOptions.find((provider) => String(provider.id) === String(selectedProviderId));
   const requestSummary = lastRequest || messages.find((item) => item.role === "user")?.content || "Service request";
 
   const handleUseCurrentLocation = () => {
@@ -528,10 +528,30 @@ export default function KaamWalaAI() {
   // =========================
   // SELECT PROVIDER
   // =========================
-  const handleBook = (providerId: string) => {
+  const handleBook = async (providerId: string) => {
     store.setSelectedProvider(providerId);
     setBookingStep("timeslot");
     setSelectedTime("");
+
+    // Fallback: If selected expert doesn't have a phone number, fetch it directly from Firestore
+    try {
+      const provider = providerOptions.find((p) => String(p.id) === String(providerId));
+      if (provider && !provider.phone) {
+        console.log("Fetching expert phone number fallback from Firestore for ID:", providerId);
+        const db = getFirebaseDb();
+        const docRef = doc(db, "experts", String(providerId));
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data && data.phone) {
+            console.log("Successfully fetched expert phone number fallback:", data.phone);
+            provider.phone = data.phone;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch expert phone number fallback from Firestore:", err);
+    }
   };
 
   // =========================
@@ -580,6 +600,23 @@ export default function KaamWalaAI() {
           console.log("Persisted booking to Firestore successfully!");
         } catch (dbErr) {
           console.error("Failed to save booking to Firestore:", dbErr);
+        }
+
+        // Double-check: Ensure phone number is loaded in selectedProvider
+        if (selectedProvider && !selectedProvider.phone) {
+          try {
+            const db = getFirebaseDb();
+            const docRef = doc(db, "experts", String(selectedProviderId));
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+              const data = docSnap.data();
+              if (data && data.phone) {
+                selectedProvider.phone = data.phone;
+              }
+            }
+          } catch (e) {
+            console.warn("Final check: Failed to fetch phone number from Firestore:", e);
+          }
         }
 
         setActiveBookingId(response.data.bookingId);
@@ -1144,6 +1181,9 @@ export default function KaamWalaAI() {
                       <a 
                         href={`https://wa.me/${(() => {
                           let cleanNum = String(selectedProvider.phone || "").replace(/\D/g, "");
+                          if (cleanNum.startsWith("00")) {
+                            cleanNum = cleanNum.slice(2);
+                          }
                           if (cleanNum.startsWith("0") && cleanNum.length === 11) {
                             cleanNum = "92" + cleanNum.slice(1);
                           } else if (cleanNum.length === 10 && !cleanNum.startsWith("92")) {
