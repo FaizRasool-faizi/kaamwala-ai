@@ -37,6 +37,7 @@
 - [x] Interactive Map Location Picker
 
 ## PHASE 6: REMAINING TASKS
+- [x] Remove Render deployment and migrate backend to Hugging Face Spaces (Truly Free, No Card, WebSockets support)
 - [ ] Admin disputes & provider monitoring live updates
 - [ ] Final UI/UX review
 - [ ] Vercel deployment prep

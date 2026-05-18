@@ -367,6 +367,7 @@ async function buildRankedOptions(intentData, availableProviders, userLocation, 
                 experience: provider.experience,
                 hours: provider.hours,
                 rate: provider.rate,
+                phone: provider.phone,
                 priceEstimate: provider.rate ? `PKR ${Number(provider.rate).toLocaleString()}` : "PKR 1,500"
             };
         });

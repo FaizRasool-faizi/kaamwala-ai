@@ -1,23 +1,15 @@
-services:
-  - type: web
-    name: kaamwala-backend
-    env: node
-    plan: starter
-    rootDir: server
-    buildCommand: npm install
-    startCommand: npm start
-    envVars:
-      - key: PORT
-        value: 5000
-      - key: GOOGLE_CLOUD_PROJECT
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: GEMINI_MODEL
-        sync: false
-      - key: GOOGLE_MAPS_API_KEY
-        sync: false
-      - key: GROQ_API_KEY
-        sync: false
-      - key: GROQ_MODEL
-        sync: false
+# =========================================================================
+# DEPRECATED: Render deployment configuration has been completely removed
+# =========================================================================
+#
+# KaamWala AI backend has been migrated to Hugging Face Spaces.
+# This migration solves the following limitations:
+#   1. 100% Free Hosting - Hugging Face requires absolutely NO credit/debit card.
+#   2. Persistent WebSockets - Hugging Face runs full Docker containers 24/7,
+#      which allows persistent socket.io connections to work flawlessly.
+#   3. High Performance - Free tier includes 16GB RAM and 2 vCPUs!
+#
+# Please follow the comprehensive step-by-step migration and deployment guide
+# located at: ./HUGGINGFACE_MIGRATION.md
+#
+# =========================================================================

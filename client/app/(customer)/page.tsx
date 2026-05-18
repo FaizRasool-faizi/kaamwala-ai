@@ -1142,7 +1142,24 @@ export default function KaamWalaAI() {
 
                     <div className="w-full pt-4 space-y-3">
                       <a 
-                        href={`https://wa.me/${selectedProvider.phone || ''}?text=${encodeURIComponent(`*KaamWala AI Booking*\n\nExpert: ${selectedProvider.name}\nTime: ${selectedTime}\nIssue: ${requestSummary}\nCharges: ${selectedProvider.priceEstimate}`)}`}
+                        href={`https://wa.me/${(() => {
+                          let cleanNum = String(selectedProvider.phone || "").replace(/\D/g, "");
+                          if (cleanNum.startsWith("0") && cleanNum.length === 11) {
+                            cleanNum = "92" + cleanNum.slice(1);
+                          } else if (cleanNum.length === 10 && !cleanNum.startsWith("92")) {
+                            cleanNum = "92" + cleanNum;
+                          }
+                          return cleanNum;
+                        })()}?text=${encodeURIComponent(
+                          `Hi ${selectedProvider.name},\n\n` +
+                          `I want to book a consultation.\n\n` +
+                          `Booking Details:\n` +
+                          `- User Name: ${customer?.name || user?.displayName || user?.email?.split("@")[0] || "Ahmed Khan"}\n` +
+                          `- Date: Today\n` +
+                          `- Time: ${selectedTime}\n` +
+                          `- Service: ${requestSummary}\n` +
+                          `- Booking ID: ${activeBookingId || "BK-" + Date.now()}`
+                        )}`}
                         target="_blank" rel="noopener noreferrer"
                         className="flex items-center justify-center w-full py-3 rounded-xl bg-white/5 border border-white/10 text-white font-medium hover:bg-white/10 transition-all text-sm"
                       >
