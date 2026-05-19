@@ -1,9 +1,9 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Expert profiles: owner can read/write their own document
+    // Expert profiles: authenticated customers can discover experts; only owner can write.
     match /experts/{expertId} {
-      allow read: if request.auth != null && request.auth.uid == expertId;
+      allow read: if request.auth != null;
       allow create: if request.auth != null
         && request.auth.uid == expertId
         && request.resource.data.id == expertId
@@ -17,6 +17,17 @@ service cloud.firestore {
     // Optional general users collection (future customers)
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /bookings/{bookingId} {
+      allow create: if request.auth != null
+        && request.resource.data.customerId == request.auth.uid;
+      allow read, update: if request.auth != null
+        && (
+          resource.data.customerId == request.auth.uid ||
+          resource.data.providerId == request.auth.uid
+        );
+      allow delete: if false;
     }
   }
 }

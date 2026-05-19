@@ -11,7 +11,7 @@ import { LanguageToggle } from "@/components/LanguageToggle";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { loginUser, loginUserWithGoogle, userProfileExists, resetUserPassword, saveUserDocument } from "@/services/userAuth";
+import { completeGoogleRedirectLogin, loginUser, loginUserWithGoogle, userProfileExists, resetUserPassword, saveUserDocument } from "@/services/userAuth";
 import { isFirebaseConfigured } from "@/lib/firebase";
 
 const loginSchema = z.object({
@@ -92,6 +92,31 @@ export default function UserLoginPage() {
       router.replace("/");
     }
   }, [user, authLoading, googleOnboardingUser, router]);
+
+  useEffect(() => {
+    if (!firebaseReady) return;
+
+    completeGoogleRedirectLogin()
+      .then(async (firebaseUser) => {
+        if (!firebaseUser) return;
+
+        const hasProfile = await userProfileExists(firebaseUser.uid);
+        if (hasProfile) {
+          await refreshCustomer();
+          router.replace("/");
+          return;
+        }
+
+        setGoogleOnboardingUser({
+          uid: firebaseUser.uid,
+          name: firebaseUser.displayName || "",
+          email: firebaseUser.email || "",
+        });
+      })
+      .catch((err) => {
+        setAuthError(err instanceof Error ? err.message : "Google redirect sign-in failed");
+      });
+  }, [firebaseReady, refreshCustomer, router]);
 
   const onSubmit = async (data: LoginData) => {
     if (!firebaseReady) {

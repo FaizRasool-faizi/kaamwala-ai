@@ -19,6 +19,7 @@ import { logoutUser } from "@/services/userAuth";
 import axios from "axios";
 import { getFirebaseDb } from "@/lib/firebase";
 import { doc, setDoc, getDoc } from "firebase/firestore";
+import { buildWhatsAppFallbackUrl, buildWhatsAppUrl, isValidWhatsAppNumber } from "@/lib/whatsapp";
 
 type SpeechRecognitionResultEvent = Event & {
   results: SpeechRecognitionResultList;
@@ -338,6 +339,9 @@ export default function KaamWalaAI() {
   const [bookingStep, setBookingStep] = useState<"idle" | "timeslot" | "confirming" | "success" | "tracking">("idle");
   const [activeBookingId, setActiveBookingId] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string>("");
+  const [whatsAppHref, setWhatsAppHref] = useState<string | null>(null);
+  const [whatsAppFallbackHref, setWhatsAppFallbackHref] = useState<string | null>(null);
+  const [bookingError, setBookingError] = useState<string | null>(null);
   const [searchRadius, setSearchRadius] = useState<number>(10);
   const [locating, setLocating] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -532,6 +536,9 @@ export default function KaamWalaAI() {
     store.setSelectedProvider(providerId);
     setBookingStep("timeslot");
     setSelectedTime("");
+    setBookingError(null);
+    setWhatsAppHref(null);
+    setWhatsAppFallbackHref(null);
 
     // Fallback: If selected expert doesn't have a phone number, fetch it directly from Firestore
     try {
@@ -563,8 +570,27 @@ export default function KaamWalaAI() {
       return;
     }
     setBookingStep("confirming");
+    setBookingError(null);
 
     try {
+      if (!selectedProvider) {
+        throw new Error("No expert selected.");
+      }
+
+      let expertPhone = selectedProvider.phone || "";
+      if (!expertPhone) {
+        const db = getFirebaseDb();
+        const docRef = doc(db, "experts", String(selectedProviderId));
+        const docSnap = await getDoc(docRef);
+        expertPhone = String(docSnap.exists() ? docSnap.data().phone || "" : "");
+      }
+
+      if (!isValidWhatsAppNumber(expertPhone)) {
+        throw new Error(`${selectedProvider.name} does not have a valid WhatsApp number. Please choose another expert or update the expert profile.`);
+      }
+
+      selectedProvider.phone = expertPhone;
+
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
       const response = await axios.post(`${apiUrl}/api/booking/create`, {
         providerId: selectedProviderId,
@@ -585,7 +611,11 @@ export default function KaamWalaAI() {
             id: response.data.bookingId,
             providerId: String(selectedProviderId),
             providerName: selectedProvider?.name || "Expert",
-            customerName: "Ahmed Khan",
+            customerId: user?.uid || null,
+            customerName: customer?.name || user?.displayName || user?.email?.split("@")[0] || "Customer",
+            customerEmail: user?.email || null,
+            customerPhone: customer?.phone || null,
+            expertPhone,
             service: requestSummary,
             clientLocation: bookingData.clientLocation || userLocation || LAHORE_FALLBACK,
             expertLocation: bookingData.expertLocation || { lat: selectedProvider?.lat, lng: selectedProvider?.lng } || LAHORE_FALLBACK,
@@ -602,29 +632,23 @@ export default function KaamWalaAI() {
           console.error("Failed to save booking to Firestore:", dbErr);
         }
 
-        // Double-check: Ensure phone number is loaded in selectedProvider
-        if (selectedProvider && !selectedProvider.phone) {
-          try {
-            const db = getFirebaseDb();
-            const docRef = doc(db, "experts", String(selectedProviderId));
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-              const data = docSnap.data();
-              if (data && data.phone) {
-                selectedProvider.phone = data.phone;
-              }
-            }
-          } catch (e) {
-            console.warn("Final check: Failed to fetch phone number from Firestore:", e);
-          }
-        }
-
         setActiveBookingId(response.data.bookingId);
+        const whatsAppInput = {
+          expert: { name: selectedProvider.name, phone: expertPhone },
+          customerName: customer?.name || user?.displayName || user?.email?.split("@")[0] || "Customer",
+          dateLabel: "Today",
+          timeLabel: selectedTime,
+          service: requestSummary,
+          bookingId: response.data.bookingId,
+        };
+        setWhatsAppHref(buildWhatsAppUrl(whatsAppInput));
+        setWhatsAppFallbackHref(buildWhatsAppFallbackUrl(whatsAppInput));
         setBookingStep("success");
       }
     } catch (err) {
       console.error("Booking Error:", err);
-      setBookingStep("idle");
+      setBookingError(err instanceof Error ? err.message : "Booking failed. Please try again.");
+      setBookingStep("timeslot");
     }
   };
 
@@ -1111,6 +1135,12 @@ export default function KaamWalaAI() {
               <div className="p-6">
                 {bookingStep === "timeslot" && (
                   <div className="space-y-6">
+                    {bookingError && (
+                      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+                        {bookingError}
+                      </div>
+                    )}
+
                     <div>
                       <p className="text-slate-400 text-sm mb-3">Expert Selected</p>
                       <div className="flex items-center gap-3 p-3 bg-white/5 rounded-2xl border border-white/10">
@@ -1178,33 +1208,23 @@ export default function KaamWalaAI() {
                     </div>
 
                     <div className="w-full pt-4 space-y-3">
-                      <a 
-                        href={`https://wa.me/${(() => {
-                          let cleanNum = String(selectedProvider.phone || "").replace(/\D/g, "");
-                          if (cleanNum.startsWith("00")) {
-                            cleanNum = cleanNum.slice(2);
-                          }
-                          if (cleanNum.startsWith("0") && cleanNum.length === 11) {
-                            cleanNum = "92" + cleanNum.slice(1);
-                          } else if (cleanNum.length === 10 && !cleanNum.startsWith("92")) {
-                            cleanNum = "92" + cleanNum;
-                          }
-                          return cleanNum;
-                        })()}?text=${encodeURIComponent(
-                          `Hi ${selectedProvider.name},\n\n` +
-                          `I want to book a consultation.\n\n` +
-                          `Booking Details:\n` +
-                          `- User Name: ${customer?.name || user?.displayName || user?.email?.split("@")[0] || "Ahmed Khan"}\n` +
-                          `- Date: Today\n` +
-                          `- Time: ${selectedTime}\n` +
-                          `- Service: ${requestSummary}\n` +
-                          `- Booking ID: ${activeBookingId || "BK-" + Date.now()}`
-                        )}`}
+                      <a
+                        href={whatsAppHref || whatsAppFallbackHref || "#"}
                         target="_blank" rel="noopener noreferrer"
                         className="flex items-center justify-center w-full py-3 rounded-xl bg-white/5 border border-white/10 text-white font-medium hover:bg-white/10 transition-all text-sm"
                       >
                         View WhatsApp Message
                       </a>
+                      {whatsAppFallbackHref && (
+                        <a
+                          href={whatsAppFallbackHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center w-full py-3 rounded-xl bg-black/30 border border-white/10 text-slate-300 font-medium hover:bg-white/10 transition-all text-sm"
+                        >
+                          Open WhatsApp Web
+                        </a>
+                      )}
                       <button
                         onClick={() => {
                           setBookingStep("idle");

@@ -2,6 +2,8 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   sendPasswordResetEmail,
   GoogleAuthProvider,
   signOut,
@@ -16,6 +18,7 @@ import type { UserProfile, UserRegistrationInput } from "@/types/user";
 
 const USERS_COLLECTION = "users";
 const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: "select_account" });
 
 /** Helper to check if a value is a plain JavaScript object */
 function isPlainObject(value: any): boolean {
@@ -143,6 +146,31 @@ export async function loginUserWithGoogle(): Promise<User> {
     const auth = getFirebaseAuth();
     const credential = await signInWithPopup(auth, googleProvider);
     return credential.user;
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code: string }).code)
+      : "";
+
+    if (
+      code === "auth/popup-blocked" ||
+      code === "auth/popup-closed-by-user" ||
+      code === "auth/cancelled-popup-request"
+    ) {
+      const auth = getFirebaseAuth();
+      await signInWithRedirect(auth, googleProvider);
+      throw new Error("Redirecting to Google sign-in...");
+    }
+
+    throw new Error(getFirebaseErrorMessage(error));
+  }
+}
+
+/** Completes Firebase redirect sign-in after returning from Google */
+export async function completeGoogleRedirectLogin(): Promise<User | null> {
+  try {
+    const auth = getFirebaseAuth();
+    const credential = await getRedirectResult(auth);
+    return credential?.user ?? null;
   } catch (error) {
     throw new Error(getFirebaseErrorMessage(error));
   }

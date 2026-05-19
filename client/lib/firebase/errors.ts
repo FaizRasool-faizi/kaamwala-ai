@@ -25,6 +25,12 @@ export function getFirebaseErrorMessage(error: unknown): string {
       return "Too many attempts. Please wait a moment and try again.";
     case "auth/popup-closed-by-user":
       return "Sign-in was cancelled.";
+    case "auth/popup-blocked":
+      return "Popup was blocked by the browser. We will use redirect sign-in instead.";
+    case "auth/unauthorized-domain":
+      return "This domain is not authorized in Firebase Authentication settings.";
+    case "auth/operation-not-allowed":
+      return "Google sign-in is not enabled in Firebase Authentication.";
     case "auth/missing-email":
       return "Please enter your email address.";
     case "auth/account-exists-with-different-credential":
