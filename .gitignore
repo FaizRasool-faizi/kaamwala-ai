@@ -9,3 +9,8 @@ build/
 test-*.js
 server/test-*.js
 server/list-models.js
+
+# Ignore large debug APKs (exceeds GitHub 100MB file size limit)
+*debug.apk
+kaamwala-ai.apk
+
