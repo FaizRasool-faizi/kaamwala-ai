@@ -297,11 +297,11 @@ export default function CustomerDashboard() {
             setAiMessage(`I found ${enriched.length} verified experts near you!`);
           }
         } else {
-          Alert.alert("No Match Found", "AI agent could not match any experts for your query.");
+          Alert.alert("No Match Found", data.recommendation?.booking?.message || data.booking?.message || "AI agent could not match any experts for your query.");
         }
         setImageBase64(null);
       } else {
-        Alert.alert("No Match Found", "AI agent could not match any experts for your query.");
+        Alert.alert("No Match Found", response.data?.data?.booking?.message || "AI agent could not match any experts for your query.");
       }
     } catch (err: any) {
       Alert.alert("AI Engine Error", err.message || "Failed to process request with backend API.");
