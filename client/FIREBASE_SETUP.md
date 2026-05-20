@@ -1,4 +1,4 @@
-# Firebase Setup Guide — KaamWala AI
+# Firebase Setup Guide - Appointix
 
 The `CONFIGURATION_NOT_FOUND` error occurs because **Firebase Authentication** has not been enabled or the **Email/Password** sign-in provider has not been configured in the Firebase Console for your project `ai-sales-engine-490611`.
 

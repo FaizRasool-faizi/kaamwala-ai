@@ -18,7 +18,7 @@ import { useAuth } from "@/context/AuthContext";
 import { logoutUser } from "@/services/userAuth";
 import axios from "axios";
 import { getFirebaseDb } from "@/lib/firebase";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, setDoc, where } from "firebase/firestore";
 import { buildWhatsAppFallbackUrl, buildWhatsAppUrl, isValidWhatsAppNumber } from "@/lib/whatsapp";
 
 type SpeechRecognitionResultEvent = Event & {
@@ -323,7 +323,21 @@ function ProviderMap({
   );
 }
 
-export default function KaamWalaAI() {
+const TIME_SLOTS = ["10:00 AM", "12:30 PM", "03:00 PM", "05:00 PM"];
+const ACTIVE_BOOKING_STATUSES = new Set(["SCHEDULED", "ON_THE_WAY", "WORK_STARTED", "PENDING"]);
+
+function getBookedSlotsForProvider(bookings: any[], providerId: string | null | undefined) {
+  if (!providerId) return new Set<string>();
+  return new Set(
+    bookings
+      .filter((booking) => String(booking.providerId) === String(providerId))
+      .filter((booking) => ACTIVE_BOOKING_STATUSES.has(String(booking.status || "").toUpperCase()))
+      .map((booking) => String(booking.scheduledTime || ""))
+      .filter(Boolean)
+  );
+}
+
+export default function Appointix() {
   const { user, customer, refreshCustomer } = useAuth();
   const [message, setMessage] = useState("");
   const [lastRequest, setLastRequest] = useState("");
@@ -342,6 +356,7 @@ export default function KaamWalaAI() {
   const [whatsAppHref, setWhatsAppHref] = useState<string | null>(null);
   const [whatsAppFallbackHref, setWhatsAppFallbackHref] = useState<string | null>(null);
   const [bookingError, setBookingError] = useState<string | null>(null);
+  const [providerBookings, setProviderBookings] = useState<any[]>([]);
   const [searchRadius, setSearchRadius] = useState<number>(10);
   const [locating, setLocating] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -448,6 +463,7 @@ export default function KaamWalaAI() {
   const submitted = messages.length > 0;
   const topProvider = providerOptions[0];
   const selectedProvider = providerOptions.find((provider) => String(provider.id) === String(selectedProviderId));
+  const bookedSlots = getBookedSlotsForProvider(providerBookings, selectedProviderId);
   const requestSummary = lastRequest || messages.find((item) => item.role === "user")?.content || "Service request";
 
   const handleUseCurrentLocation = () => {
@@ -457,7 +473,7 @@ export default function KaamWalaAI() {
     }
 
     // Graceful permission request
-    const confirmed = window.confirm("KaamWala AI needs your location to find the nearest experts and provide accurate ETA. Allow location access?");
+    const confirmed = window.confirm("Appointix needs your location to find the nearest experts and provide accurate ETA. Allow location access?");
     if (!confirmed) return;
 
     setLocating(true);
@@ -542,10 +558,13 @@ export default function KaamWalaAI() {
 
     // Fallback: If selected expert doesn't have a phone number, fetch it directly from Firestore
     try {
+      const db = getFirebaseDb();
+      const existingBookings = await getDocs(query(collection(db, "bookings"), where("providerId", "==", String(providerId))));
+      setProviderBookings(existingBookings.docs.map((item) => ({ id: item.id, ...item.data() })));
+
       const provider = providerOptions.find((p) => String(p.id) === String(providerId));
       if (provider && !provider.phone) {
         console.log("Fetching expert phone number fallback from Firestore for ID:", providerId);
-        const db = getFirebaseDb();
         const docRef = doc(db, "experts", String(providerId));
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
@@ -567,6 +586,10 @@ export default function KaamWalaAI() {
   const handleFinalConfirm = async () => {
     if (!selectedTime) {
       alert("Please select a timeslot first.");
+      return;
+    }
+    if (bookedSlots.has(selectedTime)) {
+      setBookingError("This slot is already booked. Please choose another available slot.");
       return;
     }
     setBookingStep("confirming");
@@ -659,7 +682,7 @@ export default function KaamWalaAI() {
         <div className="mx-auto flex max-w-[1500px] items-center justify-between">
           <div className="flex items-center gap-10">
             <Link href="/" className="text-xl font-black tracking-tighter hover:opacity-80 transition-opacity">
-              KaamWala <span className="text-orange-500">AI</span>
+              Appointix
             </Link>
             <div className="hidden items-center gap-8 text-[13px] font-medium text-slate-400 md:flex">
               <Link href="/" className="text-white">Home</Link>
@@ -756,7 +779,7 @@ export default function KaamWalaAI() {
           </div>
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 mb-6 text-sm text-blue-400 font-medium">
             <Zap className="w-4 h-4 text-orange-500" />
-            KaamWala AI Orchestrator v2.0
+            Appointix Orchestrator v2.0
           </div>
           <h1 className="text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight mb-6 leading-[1.1] text-white">
             Describe the Problem.<br/>
@@ -1155,19 +1178,25 @@ export default function KaamWalaAI() {
                     <div>
                       <p className="text-slate-400 text-sm mb-3">Available Timeslots (Today)</p>
                       <div className="grid grid-cols-2 gap-3">
-                        {["10:00 AM", "12:30 PM", "03:00 PM", "05:00 PM"].map((time) => (
+                        {TIME_SLOTS.map((time) => {
+                          const isBooked = bookedSlots.has(time);
+                          return (
                           <button
                             key={time}
-                            onClick={() => setSelectedTime(time)}
+                            onClick={() => !isBooked && setSelectedTime(time)}
+                            disabled={isBooked}
                             className={`p-3 rounded-xl text-sm font-semibold transition-all border ${
-                              selectedTime === time 
+                              isBooked
+                                ? "bg-red-500/10 border-red-500/30 text-red-300 cursor-not-allowed"
+                                : selectedTime === time 
                                 ? "bg-orange-500 text-white border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.3)]" 
                                 : "bg-black/30 border-white/10 text-slate-300 hover:border-white/30"
                             }`}
                           >
-                            {time}
+                            {time}{isBooked ? " - Booked" : ""}
                           </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
 

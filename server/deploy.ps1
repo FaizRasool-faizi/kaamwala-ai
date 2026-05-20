@@ -1,9 +1,9 @@
-# KaamWala AI Backend Hugging Face Deployment Script
+# Appointix Backend Hugging Face Deployment Script
 # Run this from the "server" directory in a PowerShell terminal!
 
 Clear-Host
 Write-Host "=====================================================================" -ForegroundColor Green
-Write-Host " >>> KaamWala AI: Deploying Backend to Hugging Face Spaces <<<" -ForegroundColor Green
+Write-Host " >>> Appointix: Deploying Backend to Hugging Face Spaces <<<" -ForegroundColor Green
 Write-Host "=====================================================================" -ForegroundColor Green
 Write-Host ""
 
@@ -29,7 +29,7 @@ git add .
 
 # 3. Commit files
 Write-Host "[+] Committing files..." -ForegroundColor Cyan
-git commit -m "Deploy KaamWala AI backend to Hugging Face Spaces" 2>$null
+git commit -m "Deploy Appointix backend to Hugging Face Spaces" 2>$null
 
 # 4. Ensure we are on the 'main' branch
 git branch -M main

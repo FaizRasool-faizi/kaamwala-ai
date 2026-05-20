@@ -28,7 +28,7 @@ import {
   Star,
   Zap,
 } from "lucide-react-native";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, setDoc, where } from "firebase/firestore";
 import axios from "axios";
 import tw from "twrnc";
 import { auth, db } from "../config/firebase";
@@ -38,6 +38,7 @@ import { getOrCreateChat, sendMessage, subscribeToMessages, type ChatMessage } f
 
 const API_URL = "https://faizrasool01-kaamwala-backend.hf.space";
 const TIME_SLOTS = ["10:00 AM", "12:30 PM", "03:00 PM", "05:00 PM"];
+const ACTIVE_BOOKING_STATUSES = new Set(["SCHEDULED", "ON_THE_WAY", "WORK_STARTED", "PENDING"]);
 
 type ExpertDoc = {
   id: string;
@@ -52,14 +53,6 @@ type ExpertDoc = {
   rating?: number;
   jobsCompleted?: number;
 };
-
-function normalizeWhatsAppNumber(phone: string, defaultCountryCode = "92") {
-  let digits = String(phone || "").replace(/\D/g, "");
-  if (digits.startsWith("00")) digits = digits.slice(2);
-  if (digits.startsWith("0") && digits.length === 11) return `${defaultCountryCode}${digits.slice(1)}`;
-  if (digits.length === 10 && !digits.startsWith(defaultCountryCode)) return `${defaultCountryCode}${digits}`;
-  return digits;
-}
 
 function mergeExpert(preview: ProviderOption | undefined, docData: ExpertDoc | null): ExpertDoc | null {
   if (!preview && !docData) return null;
@@ -92,6 +85,7 @@ export default function ExpertProfileScreen({ navigation, route }: any) {
   const [sending, setSending] = useState(false);
   const [bookingOpen, setBookingOpen] = useState(false);
   const [selectedTime, setSelectedTime] = useState("");
+  const [providerBookings, setProviderBookings] = useState<any[]>([]);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [profileName, setProfileName] = useState("Customer");
 
@@ -167,6 +161,14 @@ export default function ExpertProfileScreen({ navigation, route }: any) {
     }
   }, [messages.length]);
 
+  const bookedSlots = new Set(
+    providerBookings
+      .filter((booking) => String(booking.providerId) === String(expert?.id || ""))
+      .filter((booking) => ACTIVE_BOOKING_STATUSES.has(String(booking.status || "").toUpperCase()))
+      .map((booking) => String(booking.scheduledTime || ""))
+      .filter(Boolean)
+  );
+
   const handleSend = async () => {
     const text = newMessage.trim();
     const user = auth.currentUser;
@@ -186,6 +188,10 @@ export default function ExpertProfileScreen({ navigation, route }: any) {
 
   const handleBooking = async () => {
     if (!selectedTime || !expert) return;
+    if (bookedSlots.has(selectedTime)) {
+      Alert.alert("Slot Booked", "This expert is already busy at this time. Please select another slot.");
+      return;
+    }
     setBookingLoading(true);
     try {
       let phone = expert.phone || "";
@@ -203,6 +209,7 @@ export default function ExpertProfileScreen({ navigation, route }: any) {
         clientLocation: userLocation,
         service: lastRequest,
         scheduledTime: selectedTime,
+        customerName: profileName,
       });
 
       if (response.data.success) {
@@ -226,24 +233,11 @@ export default function ExpertProfileScreen({ navigation, route }: any) {
           etaMinutes: preview?.etaMinutes || 15,
         });
 
-        const waMsg = [
-          `Hi ${expert.name},`,
-          "",
-          "I have booked you through KaamWala AI App.",
-          "",
-          `Service: ${lastRequest}`,
-          `Time: ${selectedTime}`,
-          `Booking ID: ${bookingId}`,
-        ].join("\n");
-
         setBookingOpen(false);
-        Alert.alert("Booking Successful", "Open WhatsApp to coordinate with the expert?", [
-          { text: "Later", style: "cancel" },
-          {
-            text: "Open WhatsApp",
-            onPress: () => Linking.openURL(`https://wa.me/${normalizeWhatsAppNumber(phone)}?text=${encodeURIComponent(waMsg)}`),
-          },
-        ]);
+        Alert.alert(
+          "Booking Successful",
+          "Expert ko booking message aur 1-hour reminder automatically bhej diya jayega."
+        );
       }
     } catch (err: any) {
       Alert.alert("Booking failed", err.message || "Could not create booking.");
@@ -361,7 +355,15 @@ export default function ExpertProfileScreen({ navigation, route }: any) {
               >
                 <Text style={tw`text-black font-black text-xs uppercase tracking-wider`}>Call Expert Directly</Text>
               </Pressable>
-              <Pressable onPress={() => setBookingOpen(true)} style={tw`bg-orange-500 py-3.5 rounded-2xl items-center`}>
+              <Pressable
+                onPress={async () => {
+                  setSelectedTime("");
+                  const snap = await getDocs(query(collection(db, "bookings"), where("providerId", "==", String(expert.id))));
+                  setProviderBookings(snap.docs.map((booking) => ({ id: booking.id, ...booking.data() })));
+                  setBookingOpen(true);
+                }}
+                style={tw`bg-orange-500 py-3.5 rounded-2xl items-center`}
+              >
                 <Text style={tw`text-white font-black text-xs uppercase tracking-wider`}>Book Service Appointment</Text>
               </Pressable>
             </View>
@@ -369,7 +371,7 @@ export default function ExpertProfileScreen({ navigation, route }: any) {
             <View style={tw`mx-4 mt-3 bg-blue-500/5 border border-blue-500/10 rounded-2xl p-4 flex-row gap-3`}>
               <Shield size={22} color="#60a5fa" />
               <View style={tw`flex-1`}>
-                <Text style={tw`text-white text-xs font-bold uppercase`}>KaamWala Guarantee</Text>
+                <Text style={tw`text-white text-xs font-bold uppercase`}>Appointix Guarantee</Text>
                 <Text style={tw`text-gray-400 text-[10px] mt-1 leading-relaxed`}>
                   All platform experts undergo mandatory police verification and background checkups for maximum safety.
                 </Text>
@@ -443,17 +445,25 @@ export default function ExpertProfileScreen({ navigation, route }: any) {
             <View style={tw`bg-[#121318] border-t border-white/10 rounded-t-[2rem] p-6`}>
               <Text style={tw`text-white text-xl font-bold mb-4`}>Confirm Time Slot</Text>
               <View style={tw`flex-row flex-wrap gap-2 mb-6`}>
-                {TIME_SLOTS.map((time) => (
+                {TIME_SLOTS.map((time) => {
+                  const isBooked = bookedSlots.has(time);
+                  return (
                   <Pressable
                     key={time}
-                    onPress={() => setSelectedTime(time)}
+                    onPress={() => !isBooked && setSelectedTime(time)}
+                    disabled={isBooked}
                     style={tw`px-4 py-3 rounded-2xl border ${
-                      selectedTime === time ? "bg-orange-500 border-orange-500" : "bg-black/40 border-white/10"
+                      isBooked
+                        ? "bg-red-500/10 border-red-500/40"
+                        : selectedTime === time ? "bg-orange-500 border-orange-500" : "bg-black/40 border-white/10"
                     }`}
                   >
-                    <Text style={tw`text-white text-xs font-bold`}>{time}</Text>
+                    <Text style={tw`${isBooked ? "text-red-300" : "text-white"} text-xs font-bold`}>
+                      {time}{isBooked ? " - Booked" : ""}
+                    </Text>
                   </Pressable>
-                ))}
+                  );
+                })}
               </View>
               <Pressable
                 onPress={handleBooking}

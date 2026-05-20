@@ -129,7 +129,7 @@ export default function LoginScreen({ navigation }: any) {
                 <Sparkles size={32} color="#f97316" />
               </View>
               <Text style={tw`text-white text-3xl font-black tracking-tight`}>
-                KaamWala <Text style={tw`text-orange-500`}>AI</Text>
+                Appointix
               </Text>
               <Text style={tw`text-gray-400 text-sm mt-1 text-center`}>
                 Instant On-Demand Expert Matching & Dispatch

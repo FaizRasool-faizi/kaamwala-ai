@@ -24,4 +24,7 @@ export type ProviderOption = {
   hours?: string;
   status?: string;
   location?: string;
+  source?: "google_maps" | string;
+  mapsUrl?: string;
+  website?: string;
 };

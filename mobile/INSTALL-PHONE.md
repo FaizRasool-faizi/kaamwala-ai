@@ -1,4 +1,4 @@
-# KaamWala AI — Phone par install kaise karein
+# Appointix - Phone par install kaise karein
 
 Agar APK "Installing..." par atak jaye ya "App not installed" aaye, yeh steps follow karein.
 
@@ -6,12 +6,12 @@ Agar APK "Installing..." par atak jaye ya "App not installed" aaye, yeh steps fo
 
 ### 1. Purani app hata dein
 - **Settings → Apps** (ya Application Manager)
-- Dhoondein: **mobile**, **KaamWala**, ya **KaamWala AI**
+- Dhoondein: **Appointix**
 - **Uninstall** karein (sirf "Force stop" kaafi nahi)
 
 ### 2. Sahi APK file use karein
-- File ka naam: **`KaamWala-AI-v1.0.1.apk`**
-- Location PC par: `mobile\KaamWala-AI-v1.0.1.apk`
+- File ka naam: **`Appointix-v1.0.1.apk`**
+- Location PC par: `mobile\Appointix-v1.0.1.apk`
 - Size lagbhag **35–50 MB** honi chahiye (purani 80MB wali file mat use karein)
 
 ### 3. WhatsApp se mat bhejein
@@ -30,7 +30,7 @@ Agar APK "Installing..." par atak jaye ya "App not installed" aaye, yeh steps fo
 
 ```powershell
 adb uninstall com.anonymous.mobile
-adb install "d:\Faiz\hackhthon\kaamwala-ai\mobile\KaamWala-AI-v1.0.1.apk"
+adb install "d:\Faiz\hackhthon\kaamwala-ai\mobile\Appointix-v1.0.1.apk"
 ```
 
 ## 32-bit purane phone (bahut rare)

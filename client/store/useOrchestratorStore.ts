@@ -44,6 +44,9 @@ export interface ProviderOption {
   experience?: string;
   hours?: string;
   rate?: string;
+  source?: 'google_maps' | string;
+  mapsUrl?: string;
+  website?: string;
 }
 
 interface ChatMessage {

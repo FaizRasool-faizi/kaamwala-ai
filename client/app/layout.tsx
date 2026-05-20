@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "KaamWala AI",
+  title: "Appointix",
   description: "Your AI-powered localized services matching engine",
 };
 
@@ -40,4 +40,3 @@ export default function RootLayout({
     </html>
   );
 }
-

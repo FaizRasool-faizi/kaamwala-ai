@@ -1,5 +1,5 @@
 ---
-title: Kaamwala Backend
+title: Appointix Backend
 emoji: 💼
 colorFrom: green
 colorTo: blue
@@ -8,9 +8,9 @@ app_port: 7860
 pinned: false
 ---
 
-# KaamWala AI Backend
+# Appointix Backend
 
-This is the Express.js / Node.js backend server for KaamWala AI, deployed as a Docker container on Hugging Face Spaces.
+This is the Express.js / Node.js backend server for Appointix, deployed as a Docker container on Hugging Face Spaces.
 
 ## Technical Details
 

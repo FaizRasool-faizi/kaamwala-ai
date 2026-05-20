@@ -118,6 +118,8 @@ export default function ExpertDashboard() {
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [inAppNotification, setInAppNotification] = useState<{ sender: string; text: string } | null>(null);
+  const seenBookingIdsRef = useRef<Set<string>>(new Set());
+  const bookingReminderTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // AI Suggestions and approvals
   const [aiDraftMessage, setAiDraftMessage] = useState<string | null>(null);
@@ -145,10 +147,24 @@ export default function ExpertDashboard() {
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const bookingsList = snapshot.docs.map(doc => ({
+      const bookingsList: any[] = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })).sort((a: any, b: any) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+
+      const seenBookingIds = seenBookingIdsRef.current;
+      if (seenBookingIds.size > 0) {
+        const freshBooking = bookingsList.find((booking: any) => !seenBookingIds.has(booking.id));
+        if (freshBooking) {
+          playNotificationSound();
+          setInAppNotification({
+            sender: freshBooking.customerName || "Customer",
+            text: `New booking for ${freshBooking.scheduledTime || "ASAP"}`
+          });
+          setTimeout(() => setInAppNotification(null), 6000);
+        }
+      }
+      bookingsList.forEach((booking: any) => seenBookingIds.add(booking.id));
       
       setBookings(bookingsList);
       setDbLoading(false);
@@ -159,6 +175,39 @@ export default function ExpertDashboard() {
 
     return () => unsubscribe();
   }, [expert?.id]);
+
+  useEffect(() => {
+    const timers = bookingReminderTimersRef.current;
+    Object.values(timers).forEach(clearTimeout);
+    bookingReminderTimersRef.current = {};
+
+    bookings.forEach((booking) => {
+      if (!booking.scheduledTime || !["SCHEDULED", "ON_THE_WAY"].includes(String(booking.status || "").toUpperCase())) return;
+      const match = String(booking.scheduledTime).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+      if (!match) return;
+
+      let hour = Number(match[1]);
+      const minute = Number(match[2]);
+      if (match[3].toUpperCase() === "PM" && hour !== 12) hour += 12;
+      if (match[3].toUpperCase() === "AM" && hour === 12) hour = 0;
+
+      const slot = new Date();
+      slot.setHours(hour, minute, 0, 0);
+      const reminderDelay = slot.getTime() - 60 * 60 * 1000 - Date.now();
+      if (reminderDelay <= 0) return;
+
+      timers[booking.id] = setTimeout(() => {
+        playNotificationSound();
+        setInAppNotification({
+          sender: booking.customerName || "Customer",
+          text: `Reminder: booking at ${booking.scheduledTime} for ${booking.service || "service"}`
+        });
+        setTimeout(() => setInAppNotification(null), 8000);
+      }, reminderDelay);
+    });
+
+    return () => Object.values(bookingReminderTimersRef.current).forEach(clearTimeout);
+  }, [bookings]);
 
   // Subscribe to real-time active customer chats
   useEffect(() => {
@@ -435,7 +484,7 @@ export default function ExpertDashboard() {
       <aside className={`w-64 bg-[#0a0a0a] border-r border-white/5 flex flex-col p-6 fixed h-full ${isRTL ? "right-0 border-l" : "left-0"}`}>
         <div className="flex items-center gap-3 mb-12">
           <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl flex items-center justify-center font-bold text-xl">K</div>
-          <span className="text-xl font-bold tracking-tight">KaamWala <span className="text-orange-500">AI</span></span>
+          <span className="text-xl font-bold tracking-tight">Appointix</span>
         </div>
 
         <nav className="space-y-2 flex-1">
@@ -1103,7 +1152,7 @@ export default function ExpertDashboard() {
               <div className="text-center py-20 bg-white/5 rounded-3xl border border-dashed border-white/10">
                 <AlertCircle className="w-12 h-12 text-gray-500 mx-auto mb-4" />
                 <p className="text-gray-400 font-semibold">No bookings registered for your expert account yet.</p>
-                <p className="text-gray-600 text-sm mt-1 max-w-sm mx-auto">Complete customer matches inside KaamWala AI customer search to receive jobs.</p>
+                <p className="text-gray-600 text-sm mt-1 max-w-sm mx-auto">Complete customer matches inside Appointix customer search to receive jobs.</p>
               </div>
             ) : (
               <div className="space-y-4">

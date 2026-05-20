@@ -14,6 +14,8 @@ interface ProviderCardProps {
 
 export function ProviderCard({ provider, onBook, onCompare, isSelected, isTopMatch }: ProviderCardProps) {
   const avatarUrl = provider.avatarUrl || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(provider.name)}`;
+  const isExternal = provider.source === "google_maps";
+  const profileHref = isExternal ? provider.mapsUrl || provider.website || "#" : `/expert/${provider.id}`;
 
   return (
     <motion.div
@@ -34,7 +36,7 @@ export function ProviderCard({ provider, onBook, onCompare, isSelected, isTopMat
       )}
       
       {/* Image Container */}
-      <Link href={`/expert/${provider.id}`} className="block relative aspect-[4/3] overflow-hidden">
+      <Link href={profileHref} target={isExternal ? "_blank" : undefined} className="block relative aspect-[4/3] overflow-hidden">
         <img 
           src={avatarUrl} 
           alt={provider.name} 
@@ -76,7 +78,7 @@ export function ProviderCard({ provider, onBook, onCompare, isSelected, isTopMat
       {/* Content */}
       <div className="flex-1 p-5 flex flex-col">
         <div className="flex items-start justify-between gap-2 mb-3">
-          <Link href={`/expert/${provider.id}`} className="min-w-0 flex-1 block group/title">
+          <Link href={profileHref} target={isExternal ? "_blank" : undefined} className="min-w-0 flex-1 block group/title">
             <h3 className="flex items-center gap-1.5 text-lg font-bold text-white group-hover/title:text-orange-400 transition-colors truncate">
               {provider.name}
               <BadgeCheck className="h-4 w-4 shrink-0 fill-blue-500 text-white" />
@@ -109,7 +111,13 @@ export function ProviderCard({ provider, onBook, onCompare, isSelected, isTopMat
         {/* Action Buttons */}
         <div className="mt-auto flex gap-2">
           <button
-            onClick={() => onBook(provider.id)}
+            onClick={() => {
+              if (isExternal && provider.mapsUrl) {
+                window.open(provider.mapsUrl, "_blank", "noopener,noreferrer");
+                return;
+              }
+              onBook(provider.id);
+            }}
             disabled={isSelected}
             className={`flex-1 rounded-xl py-3 text-sm font-bold transition-all active:scale-95 ${
               isSelected 
@@ -117,7 +125,11 @@ export function ProviderCard({ provider, onBook, onCompare, isSelected, isTopMat
                 : 'bg-orange-500 text-black shadow-[0_8px_20px_rgba(249,115,22,0.2)] hover:bg-orange-400 hover:shadow-[0_12px_28px_rgba(249,115,22,0.3)]'
             }`}
           >
-            {isSelected ? (
+            {isExternal ? (
+              <span className="inline-flex items-center gap-2">
+                <MapPin className="h-4 w-4" /> View on Maps
+              </span>
+            ) : isSelected ? (
               <span className="inline-flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4" /> Selected
               </span>

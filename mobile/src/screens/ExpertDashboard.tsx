@@ -115,8 +115,12 @@ export default function ExpertDashboard() {
   const [sending, setSending] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [toast, setToast] = useState<{ chatId: string; sender: string; text: string } | null>(null);
+  const [bookingToast, setBookingToast] = useState<{ bookingId: string; sender: string; text: string } | null>(null);
   const chatSigInitialized = useRef(false);
   const chatSigById = useRef<Record<string, string>>({});
+  const bookingIdsInitialized = useRef(false);
+  const seenBookingIds = useRef<Set<string>>(new Set());
+  const bookingReminderTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const messagesListRef = useRef<FlatList<ChatMessage>>(null);
 
   const expertId = auth.currentUser?.uid;
@@ -189,6 +193,20 @@ export default function ExpertDashboard() {
       (snap) => {
         const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Booking));
         list.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+        if (bookingIdsInitialized.current) {
+          const freshBooking = list.find((booking) => !seenBookingIds.current.has(booking.id));
+          if (freshBooking) {
+            setBookingToast({
+              bookingId: freshBooking.id,
+              sender: freshBooking.customerName || "Customer",
+              text: `New booking for ${freshBooking.scheduledTime || "ASAP"}`,
+            });
+            Vibration.vibrate(500);
+            setTimeout(() => setBookingToast(null), 7000);
+          }
+        }
+        list.forEach((booking) => seenBookingIds.current.add(booking.id));
+        bookingIdsInitialized.current = true;
         setBookings(list);
         setLoadingBookings(false);
       },
@@ -196,6 +214,41 @@ export default function ExpertDashboard() {
     );
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    Object.values(bookingReminderTimers.current).forEach(clearTimeout);
+    bookingReminderTimers.current = {};
+
+    bookings.forEach((booking) => {
+      const status = String(booking.status || "").toUpperCase();
+      if (!booking.scheduledTime || !["SCHEDULED", "ON_THE_WAY"].includes(status)) return;
+      const match = String(booking.scheduledTime).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+      if (!match) return;
+
+      let hour = Number(match[1]);
+      const minute = Number(match[2]);
+      const meridiem = match[3].toUpperCase();
+      if (meridiem === "PM" && hour !== 12) hour += 12;
+      if (meridiem === "AM" && hour === 12) hour = 0;
+
+      const slot = new Date();
+      slot.setHours(hour, minute, 0, 0);
+      const delay = slot.getTime() - 60 * 60 * 1000 - Date.now();
+      if (delay <= 0) return;
+
+      bookingReminderTimers.current[booking.id] = setTimeout(() => {
+        setBookingToast({
+          bookingId: booking.id,
+          sender: booking.customerName || "Customer",
+          text: `Reminder: booking at ${booking.scheduledTime}`,
+        });
+        Vibration.vibrate([0, 300, 120, 300]);
+        setTimeout(() => setBookingToast(null), 8000);
+      }, delay);
+    });
+
+    return () => Object.values(bookingReminderTimers.current).forEach(clearTimeout);
+  }, [bookings]);
 
   useEffect(() => {
     if (!expertId) return;
@@ -350,11 +403,28 @@ export default function ExpertDashboard() {
             </Pressable>
           </Pressable>
         )}
+        {bookingToast && (
+          <Pressable
+            onPress={() => {
+              setActiveTab("bookings");
+              setBookingToast(null);
+            }}
+            style={tw`mx-4 mt-2 bg-[#111216] border border-green-500/40 rounded-2xl p-4 flex-row items-start gap-3`}
+          >
+            <Bell size={18} color="#22c55e" />
+            <View style={tw`flex-1`}>
+              <Text style={tw`text-white text-xs font-black uppercase`}>{bookingToast.sender}</Text>
+              <Text style={tw`text-gray-300 text-xs mt-1`} numberOfLines={2}>
+                {bookingToast.text}
+              </Text>
+            </View>
+          </Pressable>
+        )}
 
         <View style={tw`flex-row justify-between items-center px-4 py-3 border-b border-white/10 bg-black/40`}>
           <View>
             <Text style={tw`text-white text-lg font-black`}>
-              KaamWala <Text style={tw`text-orange-500`}>AI</Text>
+              Appointix
             </Text>
             <Text style={tw`text-gray-500 text-[10px]`}>Expert dashboard · Firestore live</Text>
           </View>

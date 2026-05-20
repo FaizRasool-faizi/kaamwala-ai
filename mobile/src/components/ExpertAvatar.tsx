@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Image, View, Text, StyleSheet } from "react-native";
+import { Image, View, Text, StyleSheet, type ImageStyle, type StyleProp, type ViewStyle } from "react-native";
 import tw from "twrnc";
 import { getExpertImageUrl } from "../utils/expertImage";
 
@@ -7,7 +7,7 @@ type Props = {
   name: string;
   avatarUrl?: string | null;
   profileImage?: string | null;
-  style?: object;
+  style?: StyleProp<ImageStyle | ViewStyle>;
   rounded?: "xl" | "2xl" | "full";
   showInitialsFallback?: boolean;
 };

@@ -41,7 +41,7 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import { auth, db } from "../config/firebase";
 import { signOut } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, setDoc, where } from "firebase/firestore";
 import axios from "axios";
 import tw from "twrnc";
 import MapView, { Marker } from "react-native-maps";
@@ -58,15 +58,8 @@ const API_URL = "https://faizrasool01-kaamwala-backend.hf.space";
 const LAHORE_FALLBACK = { lat: 31.5204, lng: 74.3587 };
 const QUICK_REQUESTS = ["AC Repair", "Plumbing", "Electrician", "Home Cleaning", "Tutor"];
 const TIME_SLOTS = ["10:00 AM", "12:30 PM", "03:00 PM", "05:00 PM"];
+const ACTIVE_BOOKING_STATUSES = new Set(["SCHEDULED", "ON_THE_WAY", "WORK_STARTED", "PENDING"]);
 const APP_BUILD = "1.0.2";
-
-function normalizeWhatsAppNumber(phone: string, defaultCountryCode = "92") {
-  let digits = String(phone || "").replace(/\D/g, "");
-  if (digits.startsWith("00")) digits = digits.slice(2);
-  if (digits.startsWith("0") && digits.length === 11) return `${defaultCountryCode}${digits.slice(1)}`;
-  if (digits.length === 10 && !digits.startsWith(defaultCountryCode)) return `${defaultCountryCode}${digits}`;
-  return digits;
-}
 
 function appendTrace(prev: TraceEvent[], trace: TraceEvent): TraceEvent[] {
   const last = prev[prev.length - 1];
@@ -92,6 +85,7 @@ export default function CustomerDashboard() {
   const [userLocation, setUserLocation] = useState(LAHORE_FALLBACK);
   const [selectedProvider, setSelectedProvider] = useState<ProviderOption | null>(null);
   const [selectedTime, setSelectedTime] = useState("");
+  const [providerBookings, setProviderBookings] = useState<any[]>([]);
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [agentProcessing, setAgentProcessing] = useState(false);
@@ -100,6 +94,17 @@ export default function CustomerDashboard() {
   const [isRecording, setIsRecording] = useState(false);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
   const mapRef = useRef<React.ComponentRef<typeof MapView>>(null);
+  const bookedSlots = useMemo(
+    () =>
+      new Set(
+        providerBookings
+          .filter((booking) => String(booking.providerId) === String(selectedProvider?.id || ""))
+          .filter((booking) => ACTIVE_BOOKING_STATUSES.has(String(booking.status || "").toUpperCase()))
+          .map((booking) => String(booking.scheduledTime || ""))
+          .filter(Boolean)
+      ),
+    [providerBookings, selectedProvider?.id]
+  );
 
   const openExpertProfile = (item: ProviderOption) => {
     if (!item?.id) {
@@ -314,6 +319,10 @@ export default function CustomerDashboard() {
       Alert.alert("Time Slot", "Please select a time slot first.");
       return;
     }
+    if (bookedSlots.has(selectedTime)) {
+      Alert.alert("Slot Booked", "This expert is already busy at this time. Please select another slot.");
+      return;
+    }
     if (!selectedProvider) return;
 
     setBookingLoading(true);
@@ -339,6 +348,7 @@ export default function CustomerDashboard() {
         clientLocation: userLocation,
         service: lastRequest,
         scheduledTime: selectedTime,
+        customerName: profileName,
       });
 
       if (response.data.success) {
@@ -364,26 +374,11 @@ export default function CustomerDashboard() {
           etaMinutes: selectedProvider.etaMinutes || 15,
         });
 
-        // 3. Dispatch WhatsApp redirect
-        const waMsg = [
-          `Hi ${selectedProvider.name},`,
-          "",
-          "I have booked you through KaamWala AI App.",
-          "",
-          "Booking Details:",
-          `- Client: ${profileName}`,
-          `- Service: ${lastRequest}`,
-          `- Time: ${selectedTime}`,
-          `- Booking ID: ${bookingId}`,
-        ].join("\n");
-
-        const waUrl = `https://wa.me/${normalizeWhatsAppNumber(phone)}?text=${encodeURIComponent(waMsg)}`;
-        
         setBookingModalOpen(false);
-        Alert.alert("Booking Successful", "Proceed to WhatsApp to coordinate with the expert?", [
-          { text: "Cancel", style: "cancel" },
-          { text: "Open WhatsApp", onPress: () => Linking.openURL(waUrl) },
-        ]);
+        Alert.alert(
+          "Booking Successful",
+          "Expert ko booking message aur 1-hour reminder automatically bhej diya jayega."
+        );
       } else {
         throw new Error("API booking creation failed.");
       }
@@ -400,7 +395,7 @@ export default function CustomerDashboard() {
         {/* Navigation Bar */}
         <View style={tw`flex-row justify-between items-center px-5 py-4 border-b border-white/10 bg-black/40`}>
           <Text style={tw`text-white text-lg font-black tracking-tight`}>
-            KaamWala <Text style={tw`text-orange-500`}>AI</Text>
+            Appointix
           </Text>
           <View style={tw`flex-row items-center gap-3`}>
             <Text style={tw`text-gray-600 text-[10px] font-bold`}>v{APP_BUILD}</Text>
@@ -499,7 +494,7 @@ export default function CustomerDashboard() {
             <View style={tw`bg-[#121318] border border-orange-500/30 rounded-3xl p-5 mb-5 shadow-lg shadow-orange-500/5`}>
               <View style={tw`flex-row items-center gap-2 mb-2`}>
                 <Bot size={20} color="#f97316" />
-                <Text style={tw`text-white font-black text-sm`}>KaamWala AI</Text>
+                <Text style={tw`text-white font-black text-sm`}>Appointix</Text>
               </View>
               <Text style={tw`text-gray-300 text-sm leading-relaxed`}>{aiMessage}</Text>
             </View>
@@ -545,14 +540,18 @@ export default function CustomerDashboard() {
             <View style={tw`gap-4`}>
               <Text style={tw`text-white font-black text-base px-1`}>Matched Experts</Text>
               <Text style={tw`text-gray-500 text-xs px-1 -mt-2 mb-1`}>
-                Tap any card or "Open Profile" to view expert dashboard & chat
+                Tap any card to view profile or Google Maps listing
               </Text>
               {providers.map((item, index) => {
                 const topMatch = index === 0 || item.isBestFit;
+                const isExternal = item.source === "google_maps";
                 return (
                   <Pressable
                     key={item.id}
-                    onPress={() => openExpertProfile(item)}
+                    onPress={() => {
+                      if (isExternal && item.mapsUrl) Linking.openURL(item.mapsUrl);
+                      else openExpertProfile(item);
+                    }}
                     android_ripple={{ color: "rgba(249,115,22,0.25)" }}
                     style={({ pressed }) =>
                       tw`bg-[#121318] border ${
@@ -617,23 +616,29 @@ export default function CustomerDashboard() {
                       <Pressable
                         onPress={(e) => {
                           e?.stopPropagation?.();
-                          openExpertProfile(item);
+                          if (isExternal && item.mapsUrl) Linking.openURL(item.mapsUrl);
+                          else openExpertProfile(item);
                         }}
                         style={tw`w-full bg-orange-500 py-3.5 rounded-2xl items-center mb-2`}
                       >
                         <Text style={tw`text-white font-black text-sm uppercase tracking-wide`}>
-                          Open Expert Profile & Chat
+                          {isExternal ? "View on Google Maps" : "Open Expert Profile & Chat"}
                         </Text>
                       </Pressable>
-                      <Pressable
-                        onPress={() => {
-                          setSelectedProvider(item);
-                          setBookingModalOpen(true);
-                        }}
-                        style={tw`w-full bg-orange-500/10 border border-orange-500/30 py-3 rounded-2xl items-center`}
-                      >
-                        <Text style={tw`text-orange-500 font-bold text-sm`}>Quick Book</Text>
-                      </Pressable>
+                      {!isExternal && (
+                        <Pressable
+                          onPress={async () => {
+                            setSelectedProvider(item);
+                            setSelectedTime("");
+                            const snap = await getDocs(query(collection(db, "bookings"), where("providerId", "==", String(item.id))));
+                            setProviderBookings(snap.docs.map((booking) => ({ id: booking.id, ...booking.data() })));
+                            setBookingModalOpen(true);
+                          }}
+                          style={tw`w-full bg-orange-500/10 border border-orange-500/30 py-3 rounded-2xl items-center`}
+                        >
+                          <Text style={tw`text-orange-500 font-bold text-sm`}>Quick Book</Text>
+                        </Pressable>
+                      )}
                     </View>
                   </Pressable>
                 );
@@ -677,19 +682,27 @@ export default function CustomerDashboard() {
                 Select an available slot
               </Text>
               <View style={tw`flex-row flex-wrap gap-2.5 mb-6`}>
-                {TIME_SLOTS.map((time) => (
+                {TIME_SLOTS.map((time) => {
+                  const isBooked = bookedSlots.has(time);
+                  return (
                   <Pressable
                     key={time}
-                    onPress={() => setSelectedTime(time)}
+                    onPress={() => !isBooked && setSelectedTime(time)}
+                    disabled={isBooked}
                     style={tw`px-4 py-3.5 rounded-2xl border ${
-                      selectedTime === time
+                      isBooked
+                        ? "bg-red-500/10 border-red-500/40"
+                        : selectedTime === time
                         ? "bg-orange-500 border-orange-500"
                         : "bg-black/40 border-white/10"
                     }`}
                   >
-                    <Text style={tw`text-xs font-bold text-white`}>{time}</Text>
+                    <Text style={tw`text-xs font-bold ${isBooked ? "text-red-300" : "text-white"}`}>
+                      {time}{isBooked ? " - Booked" : ""}
+                    </Text>
                   </Pressable>
-                ))}
+                  );
+                })}
               </View>
 
               <Pressable

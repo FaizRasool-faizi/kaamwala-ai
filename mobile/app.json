@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "Appointix",
+    "slug": "appointix",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -37,7 +37,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow KaamWala to access your photos to attach images for expert matching."
+          "photosPermission": "Allow Appointix to access your photos to attach images for expert matching."
         }
       ]
     ]

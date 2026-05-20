@@ -434,7 +434,7 @@ export default function ExpertDetailPage() {
           <div className="bg-gradient-to-br from-blue-500/5 to-slate-900 border border-blue-500/10 rounded-2xl p-4 flex gap-3 shadow-lg">
             <Shield className="w-6 h-6 text-blue-400 shrink-0 mt-0.5" />
             <div>
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider">KaamWala Guarantee</h4>
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider">Appointix Guarantee</h4>
               <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
                 All platform experts undergo mandatory police verification and background checkups for maximum safety.
               </p>

@@ -200,7 +200,7 @@ export default function UserRegisterPage() {
       <div className="w-full max-w-lg">
         <div className="flex justify-between items-center mb-8">
           <Link href="/" className="text-2xl font-black tracking-tight hover:opacity-80 transition-opacity">
-            KaamWala <span className="text-orange-500">AI</span>
+            Appointix
           </Link>
           <LanguageToggle />
         </div>
@@ -285,7 +285,7 @@ export default function UserRegisterPage() {
             <>
               <div className="text-center mb-8">
                 <h2 className="text-3xl font-extrabold mb-2">Create Customer Account</h2>
-                <p className="text-gray-400 text-sm">Join KaamWala AI to hire verified local service experts instantly</p>
+                <p className="text-gray-400 text-sm">Join Appointix to hire verified local service experts instantly</p>
               </div>
 
               {authError && (

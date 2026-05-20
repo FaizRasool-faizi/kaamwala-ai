@@ -239,7 +239,7 @@ export default function UserLoginPage() {
       <div className="w-full max-w-md">
         <div className="flex justify-between items-center mb-12">
           <Link href="/" className="text-2xl font-black tracking-tight hover:opacity-80 transition-opacity">
-            KaamWala <span className="text-orange-500">AI</span>
+            Appointix
           </Link>
           <LanguageToggle />
         </div>

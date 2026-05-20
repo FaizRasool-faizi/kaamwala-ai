@@ -8,7 +8,7 @@ const expertsToSeed = [
   {
     id: "seed_expert_rizwan",
     name: "Muhammad Rizwan",
-    email: "rizwan.ac@kaamwala.ai",
+    email: "rizwan.ac@appointix.ai",
     phone: "03001234561",
     category: "ac",
     skills: "AC Repair, Gas Charging, Compressor Leak Fix",
@@ -30,7 +30,7 @@ const expertsToSeed = [
   {
     id: "seed_expert_sajid",
     name: "Sajid Mehmood",
-    email: "sajid.plumber@kaamwala.ai",
+    email: "sajid.plumber@appointix.ai",
     phone: "03001234562",
     category: "plumber",
     skills: "Pipe Leaks, Sanitary Installation, Water Pump Repair",
@@ -52,7 +52,7 @@ const expertsToSeed = [
   {
     id: "seed_expert_imran",
     name: "Imran Malik",
-    email: "imran.carpenter@kaamwala.ai",
+    email: "imran.carpenter@appointix.ai",
     phone: "03001234563",
     category: "carpenter",
     skills: "Furniture Repair, Door Fitting, Polish Work",
@@ -74,7 +74,7 @@ const expertsToSeed = [
   {
     id: "seed_expert_zafar",
     name: "Zafar Iqbal",
-    email: "zafar.ac@kaamwala.ai",
+    email: "zafar.ac@appointix.ai",
     phone: "03001234564",
     category: "ac",
     skills: "AC Cleaning, General Service, Thermostat Repair",
@@ -96,7 +96,7 @@ const expertsToSeed = [
   {
     id: "seed_expert_yasir",
     name: "Yasir Mahmood",
-    email: "yasir.electrician@kaamwala.ai",
+    email: "yasir.electrician@appointix.ai",
     phone: "03001234565",
     category: "electrician",
     skills: "Short Circuit Fix, Wiring, UPS & Solar Installation",

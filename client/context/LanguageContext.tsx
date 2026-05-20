@@ -14,7 +14,7 @@ interface LanguageContextType {
 const translations: Record<Language, Record<string, string>> = {
   en: {
     // General
-    "app.name": "KaamWala AI",
+    "app.name": "Appointix",
     "common.next": "Next",
     "common.back": "Back",
     "common.submit": "Submit",
