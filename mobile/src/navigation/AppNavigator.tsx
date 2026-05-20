@@ -6,12 +6,12 @@ import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
 
-// Import Screens
 import LoginScreen from "../screens/LoginScreen";
 import RegisterScreen from "../screens/RegisterScreen";
 import ExpertRegisterScreen from "../screens/ExpertRegisterScreen";
-import CustomerDashboard from "../screens/CustomerDashboard";
 import ExpertDashboard from "../screens/ExpertDashboard";
+import ExpertProfileScreen from "../screens/ExpertProfileScreen";
+import CustomerDashboard from "../screens/CustomerDashboard";
 
 const Stack = createNativeStackNavigator();
 
@@ -75,6 +75,7 @@ export default function AppNavigator() {
         <Stack.Screen name="ExpertRegister" component={ExpertRegisterScreen} />
         <Stack.Screen name="CustomerDashboard" component={CustomerDashboard} />
         <Stack.Screen name="ExpertDashboard" component={ExpertDashboard} />
+        <Stack.Screen name="ExpertProfile" component={ExpertProfileScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

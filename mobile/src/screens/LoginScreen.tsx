@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Mail, Lock, User, Briefcase, Sparkles, Eye, EyeOff } from "lucide-react-native";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
 import tw from "twrnc";
@@ -24,6 +24,23 @@ export default function LoginScreen({ navigation }: any) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      Alert.alert("Email Required", "Please enter your email address first to reset your password.");
+      return;
+    }
+    setResetLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email.trim().toLowerCase());
+      Alert.alert("Email Sent", "A password reset link has been sent to your email address.");
+    } catch (error: any) {
+      Alert.alert("Reset Failed", error.message || "Failed to send password reset email.");
+    } finally {
+      setResetLoading(false);
+    }
+  };
 
   const handleLogin = async () => {
     if (!email.trim() || !password) {
@@ -169,7 +186,7 @@ export default function LoginScreen({ navigation }: any) {
               </View>
 
               {/* Password Input */}
-              <View style={tw`mb-6`}>
+              <View style={tw`mb-2`}>
                 <Text style={tw`text-xs font-semibold text-gray-400 mb-2 px-1`}>PASSWORD</Text>
                 <View style={tw`relative flex-row items-center bg-black/40 border border-white/10 rounded-2xl px-4 py-3.5`}>
                   <Lock size={20} color="#6b7280" style={tw`mr-3`} />
@@ -190,6 +207,15 @@ export default function LoginScreen({ navigation }: any) {
                     )}
                   </Pressable>
                 </View>
+              </View>
+
+              {/* Forgot Password */}
+              <View style={tw`items-end mb-6 pr-1`}>
+                <Pressable onPress={handleForgotPassword} disabled={resetLoading}>
+                  <Text style={tw`text-xs font-bold text-orange-500`}>
+                    {resetLoading ? "Sending..." : "Forgot Password?"}
+                  </Text>
+                </Pressable>
               </View>
 
               {/* Submit Button */}

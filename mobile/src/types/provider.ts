@@ -1,0 +1,27 @@
+export type ProviderOption = {
+  id: string;
+  name: string;
+  service?: string;
+  specialization?: string;
+  skills?: string;
+  phone?: string;
+  reason?: string;
+  rating?: number;
+  jobsCompleted?: number;
+  distanceKm?: number;
+  etaMinutes?: number;
+  isBestFit?: boolean;
+  priceEstimate?: string;
+  reliabilityScore?: number;
+  travelCharges?: number;
+  rate?: string;
+  lat?: number;
+  lng?: number;
+  avatarUrl?: string;
+  profileImage?: string;
+  bio?: string;
+  experience?: string;
+  hours?: string;
+  status?: string;
+  location?: string;
+};

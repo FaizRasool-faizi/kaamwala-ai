@@ -22,10 +22,24 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.mobile"
+      "package": "com.anonymous.mobile",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyB-2O4g3zdAMUXgEfAMfzTySWCfhFgJkzI"
+        }
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-speech-recognition",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow KaamWala to access your photos to attach images for expert matching."
+        }
+      ]
+    ]
   }
 }

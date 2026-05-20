@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -8,20 +8,25 @@ import {
   Platform,
   Pressable,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from "react-native";
+import { ScrollView } from "react-native-gesture-handler";
+import { useNavigation } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import {
   Bot,
   CalendarClock,
+  Camera,
   CheckCircle2,
   Clock,
+  Image as ImageIcon,
   MapPin,
+  Mic,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -30,49 +35,30 @@ import {
   Star,
   LogOut,
   Terminal,
+  X,
   Zap,
 } from "lucide-react-native";
+import * as ImagePicker from "expo-image-picker";
 import { auth, db } from "../config/firebase";
 import { signOut } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import axios from "axios";
 import tw from "twrnc";
-
-type ProviderOption = {
-  id: string;
-  name: string;
-  service?: string;
-  specialization?: string;
-  phone?: string;
-  reason?: string;
-  rating?: number;
-  jobsCompleted?: number;
-  distanceKm?: number;
-  etaMinutes?: number;
-  isBestFit?: boolean;
-  priceEstimate?: string;
-  reliabilityScore?: number;
-  travelCharges?: number;
-  rate?: string;
-  lat?: number;
-  lng?: number;
-};
-
-type TraceEvent = {
-  id?: string;
-  agent?: string;
-  action?: string;
-  reasoningSummary?: string;
-  reasoning?: string;
-  confidenceScore?: number;
-  latencyMs?: number;
-  status?: string;
-};
+import MapView, { Marker } from "react-native-maps";
+import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
+import type { ProviderOption } from "../types/provider";
+import type { TraceEvent } from "../types/trace";
+import { mapApiLogsToTraces } from "../types/trace";
+import { enrichProvidersWithFirestore } from "../utils/enrichProviders";
+import ExpertAvatar from "../components/ExpertAvatar";
+import AgentTracePanel from "../components/AgentTracePanel";
+import { io, Socket } from "socket.io-client";
 
 const API_URL = "https://faizrasool01-kaamwala-backend.hf.space";
 const LAHORE_FALLBACK = { lat: 31.5204, lng: 74.3587 };
 const QUICK_REQUESTS = ["AC Repair", "Plumbing", "Electrician", "Home Cleaning", "Tutor"];
 const TIME_SLOTS = ["10:00 AM", "12:30 PM", "03:00 PM", "05:00 PM"];
+const APP_BUILD = "1.0.2";
 
 function normalizeWhatsAppNumber(phone: string, defaultCountryCode = "92") {
   let digits = String(phone || "").replace(/\D/g, "");
@@ -82,16 +68,20 @@ function normalizeWhatsAppNumber(phone: string, defaultCountryCode = "92") {
   return digits;
 }
 
-function initials(name: string) {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
+function appendTrace(prev: TraceEvent[], trace: TraceEvent): TraceEvent[] {
+  const last = prev[prev.length - 1];
+  if (last && last.agent === trace.agent && last.status === "pending" && trace.status !== "pending") {
+    return [...prev.slice(0, -1), trace];
+  }
+  const exists = prev.some((t) => t.id === trace.id);
+  if (exists) {
+    return prev.map((t) => (t.id === trace.id ? trace : t));
+  }
+  return [...prev, trace];
 }
 
-export default function CustomerDashboard({ navigation }: any) {
+export default function CustomerDashboard() {
+  const navigation = useNavigation<any>();
   const [profileName, setProfileName] = useState("Customer");
   const [message, setMessage] = useState("");
   const [lastRequest, setLastRequest] = useState("");
@@ -104,7 +94,79 @@ export default function CustomerDashboard({ navigation }: any) {
   const [selectedTime, setSelectedTime] = useState("");
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
-  const [showTraces, setShowTraces] = useState(true);
+  const [agentProcessing, setAgentProcessing] = useState(false);
+  const [imageBase64, setImageBase64] = useState<string | null>(null);
+  const traceSocketRef = useRef<Socket | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [aiMessage, setAiMessage] = useState<string | null>(null);
+  const mapRef = useRef<React.ComponentRef<typeof MapView>>(null);
+
+  const openExpertProfile = (item: ProviderOption) => {
+    if (!item?.id) {
+      Alert.alert("Unavailable", "This expert profile could not be opened.");
+      return;
+    }
+    navigation.navigate("ExpertProfile", {
+      expertId: String(item.id),
+      preview: item,
+      lastRequest,
+      userLocation,
+    });
+  };
+
+  useSpeechRecognitionEvent("result", (event: any) => {
+    if (event.results && event.results.length > 0) {
+      setMessage(event.results[0].transcript);
+    }
+  });
+
+  useSpeechRecognitionEvent("end", () => setIsRecording(false));
+  useSpeechRecognitionEvent("error", () => setIsRecording(false));
+
+  useEffect(() => {
+    return () => {
+      traceSocketRef.current?.disconnect();
+    };
+  }, []);
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Sorry, we need camera roll permissions to make this work!');
+      return;
+    }
+
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.5,
+      base64: true,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setImageBase64(`data:image/jpeg;base64,${result.assets[0].base64}`);
+    }
+  };
+
+  const handleVoiceRecording = async () => {
+    try {
+      const { status } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert("Permission Denied", "Microphone access is required for voice recognition.");
+        return;
+      }
+      if (isRecording) {
+        ExpoSpeechRecognitionModule.stop();
+        setIsRecording(false);
+      } else {
+        setIsRecording(true);
+        ExpoSpeechRecognitionModule.start({ lang: "ur-PK" });
+      }
+    } catch (e: any) {
+      setIsRecording(false);
+      Alert.alert("Voice Error", "Failed to start voice recognition. Please use the APK build.");
+    }
+  };
 
   // Fetch logged in user profile details
   useEffect(() => {
@@ -160,29 +222,89 @@ export default function CustomerDashboard({ navigation }: any) {
 
   async function handleSearch(queryText: string) {
     const searchVal = queryText || message;
-    if (!searchVal.trim()) return;
+    if (!searchVal.trim() && !imageBase64) return;
 
     setLoading(true);
+    setAgentProcessing(true);
     setProviders([]);
     setTraces([]);
     setSelectedProvider(null);
-    setLastRequest(searchVal);
+    setLastRequest(searchVal || "Image uploaded for analysis");
+
+    traceSocketRef.current?.disconnect();
+    const socket = io(API_URL, { transports: ["websocket", "polling"], autoConnect: true });
+    traceSocketRef.current = socket;
+    let liveTraces: TraceEvent[] = [];
+
+    const onTrace = (trace: TraceEvent) => {
+      liveTraces = appendTrace(liveTraces, trace);
+      setTraces([...liveTraces]);
+    };
+    socket.on("trace", onTrace);
 
     try {
-      const response = await axios.post(`${API_URL}/api/expert-agent/process`, {
-        query: searchVal.trim(),
-        location: userLocation,
+      const response = await axios.post(`${API_URL}/api/chat`, {
+        message: searchVal.trim() || "Analyze this image and find an expert",
+        userLocation: userLocation,
+        image: imageBase64,
       });
 
+      const apiTraces = response.data?.logs?.length
+        ? mapApiLogsToTraces(response.data.logs)
+        : liveTraces;
+
+      if (apiTraces.length > 0) {
+        setTraces(apiTraces);
+      } else if (liveTraces.length > 0) {
+        setTraces(liveTraces);
+      }
+
       if (response.data && response.data.success) {
-        setProviders(response.data.providers || []);
-        setTraces(response.data.traces || []);
+        const { data } = response.data;
+
+        if (apiTraces.length === 0 && liveTraces.length === 0 && data.recommendation?.ai_reasoning) {
+          setTraces([
+            {
+              id: "rec-summary",
+              timestamp: new Date().toISOString(),
+              agent: "RECOMMENDATION_AGENT",
+              action: "Recommendation Ready",
+              reasoningSummary: String(data.recommendation.ai_reasoning),
+              confidenceScore: 95,
+              latencyMs: 0,
+              status: "success",
+            },
+          ]);
+        }
+
+        if (data.recommendation?.options && data.recommendation.options.length > 0) {
+          const options: ProviderOption[] = data.recommendation.options.map((p: ProviderOption) => ({
+            ...p,
+            avatarUrl: p.avatarUrl || p.profileImage,
+            profileImage: p.profileImage || p.avatarUrl,
+          }));
+          const enriched = await enrichProvidersWithFirestore(options);
+          setProviders(enriched);
+
+          if (data.booking?.message) {
+            setAiMessage(data.booking.message);
+          } else {
+            setAiMessage(`I found ${enriched.length} verified experts near you!`);
+          }
+        } else {
+          Alert.alert("No Match Found", "AI agent could not match any experts for your query.");
+        }
+        setImageBase64(null);
       } else {
         Alert.alert("No Match Found", "AI agent could not match any experts for your query.");
       }
     } catch (err: any) {
-      Alert.alert("AI Engine Error", err.message || "Failed to process request with Hugging Face Space.");
+      Alert.alert("AI Engine Error", err.message || "Failed to process request with backend API.");
     } finally {
+      socket.off("trace", onTrace);
+      socket.disconnect();
+      traceSocketRef.current = null;
+      setAgentProcessing(false);
       setLoading(false);
     }
   }
@@ -281,6 +403,7 @@ export default function CustomerDashboard({ navigation }: any) {
             KaamWala <Text style={tw`text-orange-500`}>AI</Text>
           </Text>
           <View style={tw`flex-row items-center gap-3`}>
+            <Text style={tw`text-gray-600 text-[10px] font-bold`}>v{APP_BUILD}</Text>
             <Text style={tw`text-gray-400 text-xs font-bold mr-1`}>{profileName}</Text>
             <Pressable
               onPress={handleLogout}
@@ -291,7 +414,11 @@ export default function CustomerDashboard({ navigation }: any) {
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={tw`pb-8 px-4`}>
+        <ScrollView
+          contentContainerStyle={tw`pb-8 px-4`}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+        >
           {/* Tagline */}
           <View style={tw`my-6`}>
             <Text style={tw`text-white text-2xl font-black mb-1`}>Hire Verified Local Experts</Text>
@@ -316,6 +443,17 @@ export default function CustomerDashboard({ navigation }: any) {
 
           {/* Search Box */}
           <View style={tw`bg-white/5 border border-white/10 rounded-3xl p-5 mb-5`}>
+            {imageBase64 && (
+              <View style={tw`mb-3 flex-row items-center justify-between bg-black/40 p-2.5 rounded-2xl border border-white/10`}>
+                <View style={tw`flex-row items-center gap-2`}>
+                  <ImageIcon size={16} color="#f97316" />
+                  <Text style={tw`text-white text-xs font-bold`}>Image attached for AI analysis</Text>
+                </View>
+                <Pressable onPress={() => setImageBase64(null)} style={tw`p-1.5 bg-red-500/20 rounded-full`}>
+                  <X size={14} color="#ef4444" />
+                </Pressable>
+              </View>
+            )}
             <View style={tw`flex-row items-center bg-black/40 border border-white/10 rounded-2xl px-4 py-3.5 mb-3`}>
               <Search size={20} color="#f97316" style={tw`mr-3`} />
               <TextInput
@@ -325,12 +463,17 @@ export default function CustomerDashboard({ navigation }: any) {
                 placeholderTextColor="#6b7280"
                 style={tw`flex-1 text-white font-medium`}
               />
-              <Pressable
-                onPress={useCurrentLocation}
-                style={tw`p-1 rounded-lg ${locationLoading ? "opacity-50" : ""}`}
-              >
-                <MapPin size={20} color={locationLoading ? "#9ca3af" : "#f97316"} />
-              </Pressable>
+              <View style={tw`flex-row items-center gap-1`}>
+                <Pressable onPress={pickImage} style={tw`p-1.5 rounded-lg`}>
+                  <Camera size={20} color={imageBase64 ? "#f97316" : "#9ca3af"} />
+                </Pressable>
+                <Pressable onPress={handleVoiceRecording} style={tw`p-1.5 rounded-lg`}>
+                  <Mic size={20} color={isRecording ? "#ef4444" : "#9ca3af"} />
+                </Pressable>
+                <Pressable onPress={useCurrentLocation} style={tw`p-1.5 rounded-lg ${locationLoading ? "opacity-50" : ""}`}>
+                  <MapPin size={20} color={locationLoading ? "#9ca3af" : "#f97316"} />
+                </Pressable>
+              </View>
             </View>
 
             <Pressable
@@ -351,79 +494,100 @@ export default function CustomerDashboard({ navigation }: any) {
             </Pressable>
           </View>
 
-          {/* Agent Orchestrator Trace panel */}
-          {traces.length > 0 && (
-            <View style={tw`bg-black/60 border border-white/10 rounded-3xl p-5 mb-5`}>
-              <Pressable
-                onPress={() => setShowTraces(!showTraces)}
-                style={tw`flex-row justify-between items-center pb-3 border-b border-white/10 mb-3`}
-              >
-                <View style={tw`flex-row items-center gap-2`}>
-                  <Terminal size={16} color="#f97316" />
-                  <Text style={tw`text-white font-black text-sm uppercase tracking-wider`}>
-                    AI Orchestration Log
-                  </Text>
-                </View>
-                <Text style={tw`text-orange-500 text-xs font-bold`}>
-                  {showTraces ? "Hide Logs" : "Show Logs"}
-                </Text>
-              </Pressable>
-
-              {showTraces && (
-                <View style={tw`gap-3`}>
-                  {traces.map((trace, idx) => (
-                    <View key={idx} style={tw`border-l-2 border-orange-500/50 pl-3 py-1`}>
-                      <View style={tw`flex-row justify-between items-center mb-0.5`}>
-                        <Text style={tw`text-orange-400 font-bold text-xs uppercase`}>
-                          {trace.agent || "Agent"}
-                        </Text>
-                        <Text style={tw`text-gray-500 text-[10px]`}>
-                          {trace.latencyMs}ms
-                        </Text>
-                      </View>
-                      <Text style={tw`text-gray-300 text-xs`}>
-                        {trace.reasoningSummary || trace.action}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              )}
+          {/* AI Response Bubble */}
+          {aiMessage && (
+            <View style={tw`bg-[#121318] border border-orange-500/30 rounded-3xl p-5 mb-5 shadow-lg shadow-orange-500/5`}>
+              <View style={tw`flex-row items-center gap-2 mb-2`}>
+                <Bot size={20} color="#f97316" />
+                <Text style={tw`text-white font-black text-sm`}>KaamWala AI</Text>
+              </View>
+              <Text style={tw`text-gray-300 text-sm leading-relaxed`}>{aiMessage}</Text>
             </View>
+          )}
+
+          {/* Map View */}
+          {providers.length > 0 && (
+            <View style={tw`bg-[#121318] border border-white/10 rounded-3xl overflow-hidden mb-5 h-48`}>
+              <MapView
+                ref={mapRef}
+                style={tw`flex-1`}
+                initialRegion={{
+                  latitude: userLocation?.lat || 31.5204,
+                  longitude: userLocation?.lng || 74.3587,
+                  latitudeDelta: 0.05,
+                  longitudeDelta: 0.05,
+                }}
+              >
+                <Marker
+                  coordinate={{ latitude: Number(userLocation?.lat) || 31.5204, longitude: Number(userLocation?.lng) || 74.3587 }}
+                  title="Your Location"
+                  pinColor="blue"
+                />
+                {providers.map((p) => (
+                  <Marker
+                    key={p.id}
+                    coordinate={{ latitude: Number(p.lat) || (Number(userLocation?.lat) || 31.5204) + 0.01, longitude: Number(p.lng) || (Number(userLocation?.lng) || 74.3587) + 0.01 }}
+                    title={p.name}
+                    description={p.specialization || p.service}
+                    pinColor="orange"
+                  />
+                ))}
+              </MapView>
+            </View>
+          )}
+
+          {(agentProcessing || traces.length > 0) && providers.length > 0 && (
+            <AgentTracePanel traces={traces} isProcessing={agentProcessing} />
           )}
 
           {/* Matches List */}
           {providers.length > 0 ? (
             <View style={tw`gap-4`}>
               <Text style={tw`text-white font-black text-base px-1`}>Matched Experts</Text>
+              <Text style={tw`text-gray-500 text-xs px-1 -mt-2 mb-1`}>
+                Tap any card or "Open Profile" to view expert dashboard & chat
+              </Text>
               {providers.map((item, index) => {
                 const topMatch = index === 0 || item.isBestFit;
                 return (
-                  <View
+                  <Pressable
                     key={item.id}
-                    style={tw`bg-[#121318] border ${
-                      topMatch ? "border-orange-500/40 shadow-lg shadow-orange-500/5" : "border-white/10"
-                    } rounded-3xl overflow-hidden`}
+                    onPress={() => openExpertProfile(item)}
+                    android_ripple={{ color: "rgba(249,115,22,0.25)" }}
+                    style={({ pressed }) =>
+                      tw`bg-[#121318] border ${
+                        topMatch ? "border-orange-500/40" : "border-white/10"
+                      } rounded-3xl overflow-hidden ${pressed ? "opacity-90" : ""}`
+                    }
                   >
-                    {/* Header Banner */}
-                    <View style={tw`p-4 flex-row items-center justify-between border-b border-white/5 bg-black/20`}>
-                      <View style={tw`flex-row items-center gap-3`}>
-                        <View style={tw`w-10 h-10 rounded-xl bg-orange-500/10 items-center justify-center border border-orange-500/20`}>
-                          <Text style={tw`text-orange-500 font-bold`}>{initials(item.name)}</Text>
+                    <View style={tw`relative h-40 bg-black/40`} pointerEvents="none">
+                      <ExpertAvatar
+                        name={item.name}
+                        avatarUrl={item.avatarUrl}
+                        profileImage={item.profileImage}
+                        style={tw`w-full h-full`}
+                        rounded="2xl"
+                      />
+                      <View style={tw`absolute inset-0 bg-black/35`} />
+                      {topMatch && (
+                        <View style={tw`absolute top-3 left-3 bg-green-500/20 border border-green-500/30 px-2 py-1 rounded-lg`}>
+                          <Text style={tw`text-green-400 text-[10px] font-black uppercase`}>Top Match</Text>
                         </View>
-                        <View>
-                          <Text style={tw`text-white font-bold text-sm`}>{item.name}</Text>
-                          <Text style={tw`text-gray-400 text-xs`}>{item.specialization || item.service}</Text>
+                      )}
+                      <View style={tw`absolute bottom-3 left-3 right-3 flex-row justify-between items-end`}>
+                        <View style={tw`flex-1 pr-2`}>
+                          <Text style={tw`text-white font-black text-lg`}>{item.name}</Text>
+                          <Text style={tw`text-orange-400 text-xs font-bold uppercase`}>
+                            {item.specialization || item.service}
+                          </Text>
                         </View>
-                      </View>
-                      <View style={tw`items-end`}>
-                        <Text style={tw`text-orange-500 font-bold text-sm`}>
-                          PKR {item.rate || "1,500"}
-                        </Text>
-                        <Text style={tw`text-gray-500 text-[10px]`}>Est. Price</Text>
+                        <View style={tw`items-end`}>
+                          <Text style={tw`text-orange-500 font-bold text-sm`}>PKR {item.rate || "1,500"}</Text>
+                          <Text style={tw`text-gray-400 text-[10px]`}>Est. Price</Text>
+                        </View>
                       </View>
                     </View>
 
-                    {/* Stats Body */}
                     <View style={tw`p-4`}>
                       {item.reason && (
                         <Text style={tw`text-gray-300 text-xs italic mb-4 bg-white/5 p-3 rounded-2xl border border-white/5`}>
@@ -451,26 +615,43 @@ export default function CustomerDashboard({ navigation }: any) {
                       </View>
 
                       <Pressable
+                        onPress={(e) => {
+                          e?.stopPropagation?.();
+                          openExpertProfile(item);
+                        }}
+                        style={tw`w-full bg-orange-500 py-3.5 rounded-2xl items-center mb-2`}
+                      >
+                        <Text style={tw`text-white font-black text-sm uppercase tracking-wide`}>
+                          Open Expert Profile & Chat
+                        </Text>
+                      </Pressable>
+                      <Pressable
                         onPress={() => {
                           setSelectedProvider(item);
                           setBookingModalOpen(true);
                         }}
-                        style={tw`w-full bg-orange-500/10 border border-orange-500/30 py-3 rounded-2xl items-center justify-center`}
+                        style={tw`w-full bg-orange-500/10 border border-orange-500/30 py-3 rounded-2xl items-center`}
                       >
-                        <Text style={tw`text-orange-500 font-bold text-sm`}>Book Consultation</Text>
+                        <Text style={tw`text-orange-500 font-bold text-sm`}>Quick Book</Text>
                       </Pressable>
                     </View>
-                  </View>
+                  </Pressable>
                 );
               })}
+
+              <AgentTracePanel traces={traces} isProcessing={agentProcessing} />
             </View>
           ) : (
-            !loading &&
-            lastRequest !== "" && (
-              <View style={tw`items-center my-8`}>
-                <Text style={tw`text-gray-400 text-sm`}>No matches. Try another search query.</Text>
-              </View>
-            )
+            <>
+              {!loading && lastRequest !== "" && (
+                <View style={tw`items-center my-8`}>
+                  <Text style={tw`text-gray-400 text-sm`}>No matches. Try another search query.</Text>
+                </View>
+              )}
+              {(traces.length > 0 || agentProcessing) && (
+                <AgentTracePanel traces={traces} isProcessing={agentProcessing} />
+              )}
+            </>
           )}
         </ScrollView>
 
