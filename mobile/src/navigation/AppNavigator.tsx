@@ -12,6 +12,7 @@ import ExpertRegisterScreen from "../screens/ExpertRegisterScreen";
 import ExpertDashboard from "../screens/ExpertDashboard";
 import ExpertProfileScreen from "../screens/ExpertProfileScreen";
 import CustomerDashboard from "../screens/CustomerDashboard";
+import BookingConfirmationScreen from "../screens/BookingConfirmationScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -76,6 +77,7 @@ export default function AppNavigator() {
         <Stack.Screen name="CustomerDashboard" component={CustomerDashboard} />
         <Stack.Screen name="ExpertDashboard" component={ExpertDashboard} />
         <Stack.Screen name="ExpertProfile" component={ExpertProfileScreen} />
+        <Stack.Screen name="BookingConfirmation" component={BookingConfirmationScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

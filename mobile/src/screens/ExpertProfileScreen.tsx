@@ -234,10 +234,13 @@ export default function ExpertProfileScreen({ navigation, route }: any) {
         });
 
         setBookingOpen(false);
-        Alert.alert(
-          "Booking Successful",
-          "Expert ko booking message aur 1-hour reminder automatically bhej diya jayega."
-        );
+        navigation.navigate("BookingConfirmation", {
+          expertName: expert?.name || preview?.name || "Expert",
+          scheduledTime: selectedTime,
+          amount: rate,
+          phone,
+          service: lastRequest,
+        });
       }
     } catch (err: any) {
       Alert.alert("Booking failed", err.message || "Could not create booking.");

@@ -375,10 +375,13 @@ export default function CustomerDashboard() {
         });
 
         setBookingModalOpen(false);
-        Alert.alert(
-          "Booking Successful",
-          "Expert ko booking message aur 1-hour reminder automatically bhej diya jayega."
-        );
+        navigation.navigate("BookingConfirmation", {
+          expertName: selectedProvider.name,
+          scheduledTime: selectedTime,
+          amount: rate,
+          phone,
+          service: lastRequest,
+        });
       } else {
         throw new Error("API booking creation failed.");
       }
